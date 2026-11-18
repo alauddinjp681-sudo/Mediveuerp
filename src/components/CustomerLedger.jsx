@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { collection, addDoc, query, where, orderBy, onSnapshot, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, query, where, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { ArrowLeft, Plus, IndianRupee, FileText, Download } from 'lucide-react';
 
 export default function CustomerLedger({ user, customer, onBack }) {
@@ -19,8 +19,7 @@ export default function CustomerLedger({ user, customer, onBack }) {
     // Database query: Is customer ka saara data date ke hisaab se lao
     const q = query(
       collection(db, 'users', user.uid, 'transactions'),
-      where('customerId', '==', customer.id),
-      orderBy('date', 'desc')
+      where('customerId', '==', customer.id)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -28,9 +27,10 @@ export default function CustomerLedger({ user, customer, onBack }) {
       snapshot.forEach(doc => {
         transData.push({ id: doc.id, ...doc.data() });
       });
+      transData.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
       setTransactions(transData);
       setLoading(false);
-    });
+    }, () => setLoading(false));
 
     return () => unsubscribe();
   }, [user, customer]);

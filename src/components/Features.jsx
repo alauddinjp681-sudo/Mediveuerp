@@ -1,6 +1,6 @@
 import React from 'react';
 import { Shield, Zap, FileText, Smartphone, Cloud, ArrowRight, CheckCircle, Clock } from 'lucide-react';
-import logo from '../logo.png';
+import logo from '../logo.webp';
 
 export default function Features({ navigate }) {
   
@@ -90,7 +90,7 @@ export default function Features({ navigate }) {
       {/* Footer */}
       <footer className="border-t border-slate-800 mt-12 py-8 text-center bg-slate-950">
         <p className="text-slate-500 text-sm">
-          © 2026 CCU Studios MEDIVEU ERP. All rights reserved. <br/>
+          © 2026 MEDIVEU ERP. All rights reserved. <br/>
           Built for Pharmacies, Clinics & Wholesale Distributors.
         </p>
       </footer>

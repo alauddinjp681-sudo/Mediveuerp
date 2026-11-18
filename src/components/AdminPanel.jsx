@@ -4,7 +4,7 @@ import { db } from '../firebase';
 // 🔥 updateDoc hata kar setDoc use kiya hai taaki error na aaye
 import { collection, getDocs, doc, setDoc, getDoc, onSnapshot } from 'firebase/firestore';
 
-import logo from '../logo.png';
+import logo from '../logo.webp';
 
 export default function AdminPanel({ navigate }) {
   const [tenants, setTenants] = useState([]);
