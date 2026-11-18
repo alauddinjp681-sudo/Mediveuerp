@@ -115,7 +115,7 @@ function Contact() {
       <h2 className="text-3xl font-extrabold text-white">Contact MEDIVEU ERP</h2>
       <p className="text-slate-400 mt-3">Need help with setup, plans or migration? We are here.</p>
       <div className="grid sm:grid-cols-2 gap-4 mt-8">
-        <Card className="p-6"><Mail className="mx-auto text-brand-sky" /><div className="mt-2 text-white font-semibold">support@mediveu.com</div></Card>
+        <Card className="p-6"><Mail className="mx-auto text-brand-sky" /><a href="mailto:salauddeen680@gmail.com" className="mt-2 inline-block text-white font-semibold hover:text-brand-sky focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-sky rounded">salauddeen680@gmail.com</a></Card>
         <Card className="p-6"><Phone className="mx-auto text-brand-green" /><div className="mt-2 text-white font-semibold">Mon - Sat, 10am - 7pm</div></Card>
       </div>
     </section>
