@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { createUserWithEmailAndPassword, sendPasswordResetEmail, signInWithEmailAndPassword } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
 import { doc, setDoc } from 'firebase/firestore';
-import { Receipt, Package, WifiOff, Smartphone, LayoutTemplate, BarChart3, ShieldCheck, Users, Check, ArrowRight, Menu, X, Phone, Mail } from 'lucide-react';
+import { Receipt, Package, WifiOff, Smartphone, LayoutTemplate, BarChart3, ShieldCheck, Users, Check, ArrowRight, Menu, X, Phone, Mail, Download } from 'lucide-react';
 import { auth, db, functions } from '../../firebase';
 import { BrandMark, Button, Card, Field, Modal, cn } from '../ui';
 
@@ -67,6 +67,56 @@ function Home({ setTab }) {
   );
 }
 
+function InstallAppCard() {
+  const [installPrompt, setInstallPrompt] = useState(null);
+  const [installed, setInstalled] = useState(() => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true);
+  const [showInstructions, setShowInstructions] = useState(false);
+
+  useEffect(() => {
+    const onPrompt = (event) => {
+      event.preventDefault();
+      setInstallPrompt(event);
+    };
+    const onInstalled = () => {
+      setInstalled(true);
+      setInstallPrompt(null);
+    };
+    window.addEventListener('beforeinstallprompt', onPrompt);
+    window.addEventListener('appinstalled', onInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onPrompt);
+      window.removeEventListener('appinstalled', onInstalled);
+    };
+  }, []);
+
+  const install = async () => {
+    if (!installPrompt) {
+      setShowInstructions((visible) => !visible);
+      return;
+    }
+    await installPrompt.prompt();
+    const choice = await installPrompt.userChoice;
+    if (choice.outcome === 'accepted') setInstalled(true);
+    setInstallPrompt(null);
+  };
+
+  return (
+    <Card className="mt-6 p-5 sm:p-6 flex flex-col md:flex-row items-start md:items-center gap-4 justify-between">
+      <div className="flex items-start gap-3 min-w-0">
+        <span className="w-10 h-10 shrink-0 rounded-xl bg-brand-sky/10 text-brand-sky grid place-items-center"><Smartphone size={20} /></span>
+        <div>
+          <h3 className="font-semibold text-white">{installed ? 'MEDIVEU ERP is installed' : 'Use MEDIVEU like an app'}</h3>
+          <p className="text-sm text-slate-400 mt-1">Add it to your phone or computer for a full-screen shortcut and offline access.</p>
+          {showInstructions && !installed && (
+            <p className="text-sm text-slate-300 mt-2" role="status">On iPhone or iPad, tap Share then Add to Home Screen. On Android or desktop, open the browser menu and choose Install app or Add to Home screen.</p>
+          )}
+        </div>
+      </div>
+      {!installed && <Button variant="secondary" className="w-full md:w-auto shrink-0" onClick={install}><Download size={16} /> {installPrompt ? 'Install app' : showInstructions ? 'Hide install steps' : 'How to install'}</Button>}
+    </Card>
+  );
+}
+
 function FeaturesGrid() {
   return (
     <section className="max-w-6xl mx-auto px-4 py-16">
@@ -81,12 +131,7 @@ function FeaturesGrid() {
           </Card>
         ))}
       </div>
-      <Card className="mt-6 p-6 flex flex-col md:flex-row items-center gap-4 justify-between">
-        <div className="flex items-center gap-3">
-          <Smartphone className="text-brand-sky" />
-          <p className="text-sm text-slate-300">Install MEDIVEU ERP on your phone or PC from the browser menu: it opens like an app and works offline.</p>
-        </div>
-      </Card>
+      <InstallAppCard />
     </section>
   );
 }
