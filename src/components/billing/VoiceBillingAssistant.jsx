@@ -3,25 +3,9 @@ import { Mic, MicOff, Sparkles, HelpCircle, Check } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { SpeechRecognition } from '@capgo/capacitor-speech-recognition';
 import { Button, Card } from '../ui';
-import { toNumber } from '../../lib/format';
+import { parseVoiceDraft } from '../../lib/voiceBilling';
 
 const speechApi = () => window.SpeechRecognition || window.webkitSpeechRecognition;
-const normalize = (value) => String(value || '').normalize('NFKD').replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim().toLocaleLowerCase();
-
-function parseVoiceDraft(transcript, inventory) {
-  const text = normalize(transcript);
-  const buyerMatch = text.match(/(?:customer|party|grahak)\s+([\p{L}][\p{L} ]{1,28}?)(?=\s+(?:add|item|medicine|bill|for)|[,.;]|$)/u);
-  const matchedItems = inventory
-    .filter((item) => item.name && text.includes(normalize(item.name)))
-    .map((item) => {
-      const name = normalize(item.name);
-      const position = text.indexOf(name);
-      const beforeName = text.slice(Math.max(0, position - 20), position);
-      const quantityMatch = beforeName.match(/(\d+(?:\.\d+)?)\s*(?:x|pcs?|strips?|bottles?)?\s*$/i);
-      return { item, quantity: quantityMatch ? Math.max(0.01, toNumber(quantityMatch[1])) : 1 };
-    });
-  return { buyerName: buyerMatch?.[1]?.trim() || '', matchedItems };
-}
 
 export default function VoiceBillingAssistant({ inventory, onApply }) {
   const [transcript, setTranscript] = useState('');
@@ -132,7 +116,7 @@ export default function VoiceBillingAssistant({ inventory, onApply }) {
               <h2 className="font-bold text-white">Voice bill assistant</h2>
               <span className="text-[10px] rounded-full border border-brand-sky/25 px-2 py-0.5 text-brand-sky font-semibold">REVIEW BEFORE SAVE</span>
             </div>
-            <p className="text-xs text-slate-400 mt-1">Speak the party and stock item names. We&apos;ll prepare a draft; nothing is saved until you check and save it.</p>
+            <p className="text-xs text-slate-400 mt-1">Speak in Hindi or English. We&apos;ll prepare an editable draft; nothing is saved until you check and save it.</p>
             <p className="text-[11px] text-slate-500 mt-1">Voice input needs microphone permission and your device&apos;s speech service. You can always type instead.</p>
           </div>
         </div>
@@ -148,7 +132,7 @@ export default function VoiceBillingAssistant({ inventory, onApply }) {
       <div className="grid lg:grid-cols-[minmax(0,1.2fr)_minmax(240px,0.8fr)] gap-3 mt-4">
         <div>
           <label htmlFor="voice-command" className="sr-only">Voice command transcript</label>
-          <textarea id="voice-command" rows={3} value={transcript} onChange={(event) => setTranscript(event.target.value)} placeholder="Try: Customer Rahul, add 2 Paracetamol 650 and 1 ORS Sachet" className="field resize-y min-h-24" />
+          <textarea id="voice-command" rows={3} value={transcript} onChange={(event) => setTranscript(event.target.value)} placeholder="उदाहरण: ग्राहक Rahul, 2 Paracetamol 650mg और दो ORS Sachet" className="field resize-y min-h-24" />
           <div className="flex flex-wrap gap-2 mt-2">
             <Button variant={listening ? 'danger' : 'secondary'} onClick={toggleListening} aria-pressed={listening}>
               {listening ? <><MicOff size={16} /> Stop listening</> : <><Mic size={16} /> Speak bill</>}

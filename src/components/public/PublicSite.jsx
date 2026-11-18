@@ -104,15 +104,20 @@ function InstallAppCard() {
     <Card className="mt-6 p-5 sm:p-6 flex flex-col md:flex-row items-start md:items-center gap-4 justify-between">
       <div className="flex items-start gap-3 min-w-0">
         <span className="w-10 h-10 shrink-0 rounded-xl bg-brand-sky/10 text-brand-sky grid place-items-center"><Smartphone size={20} /></span>
-        <div>
+        <div className="min-w-0">
           <h3 className="font-semibold text-white">{installed ? 'MEDIVEU ERP is installed' : 'Use MEDIVEU like an app'}</h3>
-          <p className="text-sm text-slate-400 mt-1">Add it to your phone or computer for a full-screen shortcut and offline access.</p>
+          <p className="text-sm text-slate-400 mt-1">Install it on your phone or computer for a full-screen shortcut and offline access, or get the Android release.</p>
           {showInstructions && !installed && (
             <p className="text-sm text-slate-300 mt-2" role="status">On iPhone or iPad, tap Share then Add to Home Screen. On Android or desktop, open the browser menu and choose Install app or Add to Home screen.</p>
           )}
         </div>
       </div>
-      {!installed && <Button variant="secondary" className="w-full md:w-auto shrink-0" onClick={install}><Download size={16} /> {installPrompt ? 'Install app' : showInstructions ? 'Hide install steps' : 'How to install'}</Button>}
+      <div className="flex flex-col sm:flex-row w-full md:w-auto gap-2 shrink-0">
+        {!installed && <Button variant="secondary" className="w-full md:w-auto" onClick={install}><Download size={16} /> {installPrompt ? 'Install web app' : showInstructions ? 'Hide install steps' : 'Install web app'}</Button>}
+        <a href="https://github.com/salauddeen680/Mediveuerp/releases/latest" target="_blank" rel="noreferrer" className="btn-ghost justify-center" aria-label="Open MEDIVEU Android APK downloads on GitHub">
+          <Download size={16} /> Android APK
+        </a>
+      </div>
     </Card>
   );
 }
@@ -251,16 +256,18 @@ function Register({ setTab, showToast }) {
       if (referrerUid) {
         try {
           await httpsCallable(functions, 'attachReferral')({ referrerUid });
+          showToast('Account created with referral linked. Your 7-day trial has started.');
         } catch {
-          showToast('Account created. The referral could not be linked; contact support before subscribing.', 'error');
-          return;
+          showToast('Account created, but the referral link could not be verified. Contact support before subscribing.', 'error');
         }
+      } else {
+        showToast('Account created. Your 7-day trial has started.');
       }
-      showToast('Account created. Your 7-day trial has started.');
     } catch (err) {
       showToast(authError(err), 'error');
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   };
 
   return (
