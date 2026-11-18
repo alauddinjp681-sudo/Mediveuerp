@@ -1,0 +1,275 @@
+import React, { useState } from 'react';
+import { createUserWithEmailAndPassword, sendPasswordResetEmail, signInWithEmailAndPassword } from 'firebase/auth';
+import { doc, setDoc } from 'firebase/firestore';
+import { Receipt, Package, WifiOff, Smartphone, LayoutTemplate, BarChart3, ShieldCheck, Users, Check, ArrowRight, Menu, X, Phone, Mail } from 'lucide-react';
+import { auth, db } from '../../firebase';
+import { BrandMark, Button, Card, Field, Modal, cn } from '../ui';
+
+const FEATURES = [
+  { icon: Receipt, title: 'Fast GST Billing', text: 'Keyboard-first billing (F2 save, F4 print) with barcode scan, CGST/SGST/IGST and auto amount in words.' },
+  { icon: LayoutTemplate, title: '10+ Bill Templates', text: 'A4 GST, pharma wholesale, A5 retail, thermal 80mm & 58mm, estimate, challan and more.' },
+  { icon: Package, title: 'Batch & Expiry Stock', text: 'Track batch, expiry, MRP and quantity. Stock auto-reduces on sale and increases on purchase.' },
+  { icon: WifiOff, title: 'Works Offline', text: 'Keep billing without internet. Everything syncs automatically when you are back online.' },
+  { icon: Users, title: 'Party Ledger (Khata)', text: 'Customer and supplier ledgers with credit, payments and outstanding balances.' },
+  { icon: BarChart3, title: 'Reports & Alerts', text: 'Sales reports, low-stock and near-expiry alerts, Excel export and one-click backup.' },
+];
+
+const PLANS = [
+  { name: 'Free Trial', price: '0', period: '7 days', text: 'All features, no card required.', cta: 'Start Free Trial' },
+  { name: 'Monthly', price: '249', period: 'month', text: 'Full ERP access with all updates.', cta: 'Choose Monthly', featured: true },
+  { name: 'Yearly', price: '2,799', period: 'year', text: 'Best value. Save over 6% yearly.', cta: 'Choose Yearly' },
+];
+
+const TABS = ['home', 'features', 'pricing', 'contact'];
+
+function authError(err) {
+  const map = {
+    'auth/invalid-credential': 'Invalid email or password',
+    'auth/user-not-found': 'No account found with this email',
+    'auth/wrong-password': 'Invalid email or password',
+    'auth/email-already-in-use': 'This email is already registered. Please log in.',
+    'auth/weak-password': 'Password must be at least 6 characters',
+    'auth/network-request-failed': 'No internet connection. Please connect to log in.',
+  };
+  return map[err?.code] || String(err?.message || 'Something went wrong').replace('Firebase:', '').trim();
+}
+
+function Home({ setTab }) {
+  return (
+    <>
+      <section className="relative overflow-hidden">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(30,123,240,0.25),transparent_60%)]" aria-hidden="true" />
+        <div className="relative max-w-6xl mx-auto px-4 pt-16 pb-20 md:pt-24 md:pb-28 text-center">
+          <span className="inline-flex items-center gap-2 text-xs font-semibold text-brand-green border border-brand-green/30 bg-brand-green/10 rounded-full px-3 py-1">
+            <ShieldCheck size={14} /> Complete Medical Store ERP
+          </span>
+          <h1 className="mt-6 text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight text-white text-balance leading-[1.05]">
+            Smart billing & stock for <span className="gradient-text">medical stores</span>
+          </h1>
+          <p className="mt-5 text-base md:text-lg text-slate-400 max-w-2xl mx-auto text-pretty">
+            MEDIVEU ERP helps pharmacies and wholesalers create GST invoices in seconds, manage batch-wise stock and party ledgers on mobile, laptop or desktop, even offline.
+          </p>
+          <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
+            <Button onClick={() => setTab('register')} className="px-6 py-3">Start 7-day free trial <ArrowRight size={16} /></Button>
+            <Button variant="secondary" onClick={() => setTab('login')} className="px-6 py-3">Login to store</Button>
+          </div>
+          <div className="mt-10 flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm text-slate-400">
+            {['GST ready', 'Works offline', 'Thermal & A4 print', 'WhatsApp share'].map((t) => (
+              <span key={t} className="inline-flex items-center gap-1.5"><Check size={14} className="text-brand-green" /> {t}</span>
+            ))}
+          </div>
+        </div>
+      </section>
+      <FeaturesGrid />
+      <Pricing setTab={setTab} />
+    </>
+  );
+}
+
+function FeaturesGrid() {
+  return (
+    <section className="max-w-6xl mx-auto px-4 py-16">
+      <h2 className="text-3xl md:text-4xl font-extrabold text-white text-center text-balance">Everything your store needs</h2>
+      <p className="text-slate-400 text-center mt-3 max-w-xl mx-auto">Built for Indian pharmacies, distributors and retail counters.</p>
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-10">
+        {FEATURES.map(({ icon: Icon, title, text }) => (
+          <Card key={title} className="p-6">
+            <span className="w-11 h-11 rounded-xl bg-brand-gradient text-white flex items-center justify-center shadow-glow"><Icon size={20} /></span>
+            <h3 className="mt-4 font-bold text-white">{title}</h3>
+            <p className="mt-1.5 text-sm text-slate-400 leading-relaxed">{text}</p>
+          </Card>
+        ))}
+      </div>
+      <Card className="mt-6 p-6 flex flex-col md:flex-row items-center gap-4 justify-between">
+        <div className="flex items-center gap-3">
+          <Smartphone className="text-brand-sky" />
+          <p className="text-sm text-slate-300">Install MEDIVEU ERP on your phone or PC from the browser menu: it opens like an app and works offline.</p>
+        </div>
+      </Card>
+    </section>
+  );
+}
+
+function Pricing({ setTab }) {
+  return (
+    <section className="max-w-6xl mx-auto px-4 py-16">
+      <h2 className="text-3xl md:text-4xl font-extrabold text-white text-center">Simple, transparent pricing</h2>
+      <div className="grid md:grid-cols-3 gap-4 mt-10">
+        {PLANS.map((p) => (
+          <Card key={p.name} className={cn('p-6 flex flex-col', p.featured && 'border-brand-sky/50 shadow-glow')}>
+            {p.featured && <span className="self-start text-[11px] font-bold uppercase tracking-wider text-white bg-brand-gradient rounded-full px-2.5 py-0.5 mb-3">Most popular</span>}
+            <h3 className="font-bold text-white text-lg">{p.name}</h3>
+            <div className="mt-3 text-4xl font-extrabold text-white">₹{p.price}<span className="text-sm font-medium text-slate-400"> / {p.period}</span></div>
+            <p className="text-sm text-slate-400 mt-2 flex-1">{p.text}</p>
+            <Button variant={p.featured ? 'primary' : 'secondary'} className="mt-6 w-full" onClick={() => setTab('register')}>{p.cta}</Button>
+          </Card>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function Contact() {
+  return (
+    <section className="max-w-3xl mx-auto px-4 py-20 text-center">
+      <h2 className="text-3xl font-extrabold text-white">Contact MEDIVEU ERP</h2>
+      <p className="text-slate-400 mt-3">Need help with setup, plans or migration? We are here.</p>
+      <div className="grid sm:grid-cols-2 gap-4 mt-8">
+        <Card className="p-6"><Mail className="mx-auto text-brand-sky" /><div className="mt-2 text-white font-semibold">support@mediveu.com</div></Card>
+        <Card className="p-6"><Phone className="mx-auto text-brand-green" /><div className="mt-2 text-white font-semibold">Mon - Sat, 10am - 7pm</div></Card>
+      </div>
+    </section>
+  );
+}
+
+function AuthCard({ title, subtitle, children }) {
+  return (
+    <section className="max-w-md mx-auto px-4 py-14 md:py-20">
+      <Card className="p-6 md:p-8">
+        <div className="flex justify-center mb-5"><BrandMark /></div>
+        <h1 className="text-xl font-bold text-white text-center">{title}</h1>
+        <p className="text-sm text-slate-400 text-center mt-1 mb-6">{subtitle}</p>
+        {children}
+      </Card>
+    </section>
+  );
+}
+
+function Login({ setTab, showToast }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await signInWithEmailAndPassword(auth, email.trim(), password);
+      showToast('Logged in successfully');
+    } catch (err) {
+      showToast(authError(err), 'error');
+    }
+    setBusy(false);
+  };
+
+  const reset = async (e) => {
+    e.preventDefault();
+    try {
+      await sendPasswordResetEmail(auth, resetEmail.trim());
+      showToast('Password reset link sent. Check your inbox.');
+      setResetOpen(false);
+    } catch (err) {
+      showToast(authError(err), 'error');
+    }
+  };
+
+  return (
+    <AuthCard title="Login to your store" subtitle="Welcome back to MEDIVEU ERP">
+      <form onSubmit={submit} className="space-y-4">
+        <Field label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
+        <Field label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" />
+        <div className="flex justify-end">
+          <button type="button" onClick={() => { setResetEmail(email); setResetOpen(true); }} className="text-sm text-brand-sky hover:underline">Forgot password?</button>
+        </div>
+        <Button type="submit" className="w-full" disabled={busy}>{busy ? 'Logging in...' : 'Login'}</Button>
+      </form>
+      <p className="mt-5 text-center text-sm text-slate-400">New here? <button onClick={() => setTab('register')} className="text-brand-sky font-semibold hover:underline">Create account</button></p>
+      <Modal isOpen={resetOpen} onClose={() => setResetOpen(false)} title="Reset password">
+        <form onSubmit={reset} className="space-y-4">
+          <p className="text-sm text-slate-400">Enter your registered email and we will send a secure reset link.</p>
+          <Field label="Email" type="email" value={resetEmail} onChange={(e) => setResetEmail(e.target.value)} required />
+          <Button type="submit" className="w-full">Send reset link</Button>
+        </form>
+      </Modal>
+    </AuthCard>
+  );
+}
+
+function Register({ setTab, showToast }) {
+  const [form, setForm] = useState({ storeName: '', phone: '', email: '', password: '' });
+  const [busy, setBusy] = useState(false);
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const res = await createUserWithEmailAndPassword(auth, form.email.trim(), form.password);
+      await Promise.all([
+        setDoc(doc(db, 'users', res.user.uid), { email: form.email.trim(), status: 'Active', plan: '7 Days Free Trial', createdAt: Date.now() }),
+        setDoc(doc(db, 'users', res.user.uid, 'settings', 'general'), { storeName: form.storeName.trim(), phone: form.phone, address: '', gstin: '', dlNumber: '' }),
+      ]);
+      showToast('Account created. Your 7-day trial has started.');
+    } catch (err) {
+      showToast(authError(err), 'error');
+    }
+    setBusy(false);
+  };
+
+  return (
+    <AuthCard title="Create your store account" subtitle="7 days free. No card required.">
+      <form onSubmit={submit} className="space-y-4">
+        <Field label="Store Name" value={form.storeName} onChange={set('storeName')} required />
+        <Field label="Mobile" type="tel" inputMode="tel" value={form.phone} onChange={set('phone')} />
+        <Field label="Email" type="email" value={form.email} onChange={set('email')} required autoComplete="email" />
+        <Field label="Password" type="password" minLength={6} value={form.password} onChange={set('password')} required autoComplete="new-password" />
+        <Button type="submit" className="w-full" disabled={busy}>{busy ? 'Creating...' : 'Register & start trial'}</Button>
+      </form>
+      <p className="mt-5 text-center text-sm text-slate-400">Already have an account? <button onClick={() => setTab('login')} className="text-brand-sky font-semibold hover:underline">Login</button></p>
+    </AuthCard>
+  );
+}
+
+export default function PublicSite({ showToast, tab, setTab }) {
+  const [menu, setMenu] = useState(false);
+  const current = ['home', 'features', 'pricing', 'contact', 'login', 'register'].includes(tab) ? tab : 'home';
+  const goTab = (t) => { setTab(t); setMenu(false); window.scrollTo(0, 0); };
+
+  const page = {
+    home: <Home setTab={goTab} />,
+    features: <FeaturesGrid />,
+    pricing: <Pricing setTab={goTab} />,
+    contact: <Contact />,
+    login: <Login setTab={goTab} showToast={showToast} />,
+    register: <Register setTab={goTab} showToast={showToast} />,
+  }[current];
+
+  return (
+    <div className="min-h-dvh flex flex-col bg-ink-950">
+      <header className="sticky top-0 z-40 border-b border-white/[0.07] bg-ink-950/80 backdrop-blur">
+        <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+          <button onClick={() => goTab('home')} aria-label="MEDIVEU ERP home"><BrandMark size="sm" /></button>
+          <nav className="hidden md:flex items-center gap-1" aria-label="Website">
+            {TABS.map((t) => (
+              <button key={t} onClick={() => goTab(t)} aria-current={current === t ? 'page' : undefined}
+                className={cn('px-3 py-2 rounded-lg text-sm font-medium capitalize', current === t ? 'text-white bg-white/[0.06]' : 'text-slate-400 hover:text-white')}>{t}</button>
+            ))}
+          </nav>
+          <div className="hidden md:flex items-center gap-2">
+            <Button variant="ghost" onClick={() => goTab('login')}>Login</Button>
+            <Button onClick={() => goTab('register')}>Free Trial</Button>
+          </div>
+          <button className="md:hidden p-2 text-slate-300" onClick={() => setMenu((m) => !m)} aria-label="Toggle menu" aria-expanded={menu}>{menu ? <X /> : <Menu />}</button>
+        </div>
+        {menu && (
+          <div className="md:hidden border-t border-white/[0.07] px-4 py-3 space-y-1 bg-ink-900">
+            {TABS.map((t) => <button key={t} onClick={() => goTab(t)} className="block w-full text-left px-3 py-2.5 rounded-lg text-slate-200 capitalize hover:bg-white/5">{t}</button>)}
+            <div className="grid grid-cols-2 gap-2 pt-2">
+              <Button variant="secondary" onClick={() => goTab('login')}>Login</Button>
+              <Button onClick={() => goTab('register')}>Free Trial</Button>
+            </div>
+          </div>
+        )}
+      </header>
+      <main className="flex-1">{page}</main>
+      <footer className="border-t border-white/[0.07] py-8">
+        <div className="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-slate-500">
+          <BrandMark size="sm" />
+          <span>&copy; {new Date().getFullYear()} MEDIVEU ERP. All rights reserved.</span>
+        </div>
+      </footer>
+    </div>
+  );
+}

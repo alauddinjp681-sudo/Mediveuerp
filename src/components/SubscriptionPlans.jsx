@@ -71,6 +71,7 @@ export default function SubscriptionPlans({ user, showToast, navigate }) {
             
             await updateDoc(userRef, {
               plan: planFullName,
+              createdAt: Date.now(),
               status: 'Active',
               razorpayPaymentId: response.razorpay_payment_id,
               updatedAt: serverTimestamp()
