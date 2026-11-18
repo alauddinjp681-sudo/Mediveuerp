@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { collection, doc, increment, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
-import { Save, Printer, FileDown, Share2, LayoutTemplate, FilePlus2, Lock, Eye, PencilLine, Keyboard } from 'lucide-react';
+import { Save, Printer, FileDown, Share2, LayoutTemplate, FilePlus2, Lock, Eye, PencilLine, Keyboard, Mic, PenLine } from 'lucide-react';
 import { db } from '../../firebase';
 import { Button, Card, Field, cn } from '../ui';
 import ItemsEditor from './ItemsEditor';
+import VoiceBillingAssistant from './VoiceBillingAssistant';
 import TemplatePicker from './TemplatePicker';
 import InvoicePreview from '../invoice-templates/InvoicePreview';
 import { getTemplate, ACCENTS } from '../invoice-templates';
@@ -45,6 +46,7 @@ export default function BillingPOS({ user, userData, editBill, onClearEdit, show
   const [extraDiscount, setExtraDiscount] = useState('');
   const [savedId, setSavedId] = useState(null);
   const [mobileTab, setMobileTab] = useState('edit');
+  const [billingMode, setBillingMode] = useState('manual');
   const [pickerOpen, setPickerOpen] = useState(false);
   const [busy, setBusy] = useState('');
   const paperRef = useRef(null);
@@ -102,6 +104,27 @@ export default function BillingPOS({ user, userData, editBill, onClearEdit, show
     if (match) {
       setBuyer({ ...blankBuyer(), name: match.name, phone: match.phone || '', address: match.address || '', gstin: match.gstin || '', dlNumber: match.dlNumber || '', stateName: match.stateName || '' });
     }
+  };
+
+  const applyVoiceDraft = ({ buyerName, matchedItems }) => {
+    if (buyerName) {
+      const match = customers.find((c) => c.name?.toLowerCase() === buyerName.toLowerCase());
+      setBuyer(match ? { ...blankBuyer(), ...match, name: match.name } : (current) => ({ ...current, name: buyerName }));
+    }
+    const preparedItems = matchedItems.map(({ item, quantity }) => ({
+      ...emptyItem(),
+      inventoryId: item.id,
+      description: item.name || '',
+      hsn: item.hsn || '',
+      batch: item.batchNo && item.batchNo !== 'N/A' ? item.batchNo : '',
+      expiry: item.expiryDate ? String(item.expiryDate).slice(0, 7) : '',
+      mrp: item.mrp || '',
+      rate: item.rate || '',
+      gstPercent: item.gstPercent ?? 12,
+      qty: quantity,
+    }));
+    setItems((current) => [...current.filter((item) => item.description || toNumber(item.rate)), ...preparedItems]);
+    setBillingMode('manual');
   };
 
   const resetBill = useCallback(() => {
@@ -283,6 +306,17 @@ export default function BillingPOS({ user, userData, editBill, onClearEdit, show
           <Button onClick={handleSave}><Save size={16} /> {savedId ? 'Update' : 'Save'}</Button>
         </div>
       </div>
+
+      <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-ink-900 border border-white/10 mb-4 no-print" role="group" aria-label="Billing method">
+        {[['manual', 'Type a bill', PenLine], ['voice', 'Speak a bill', Mic]].map(([id, label, Icon]) => (
+          <button key={id} type="button" aria-pressed={billingMode === id} onClick={() => setBillingMode(id)}
+            className={cn('flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition', billingMode === id ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white')}>
+            <Icon size={16} /> {label}
+          </button>
+        ))}
+      </div>
+
+      {billingMode === 'voice' && <div className="mb-4 no-print"><VoiceBillingAssistant inventory={inventory} onApply={applyVoiceDraft} /></div>}
 
       <div className="lg:hidden grid grid-cols-2 gap-1 p-1 rounded-xl bg-ink-900 border border-white/10 mb-4 no-print" role="tablist">
         {[['edit', 'Edit', PencilLine], ['preview', 'Preview', Eye]].map(([id, label, Icon]) => (

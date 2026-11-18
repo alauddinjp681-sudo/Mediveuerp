@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createUserWithEmailAndPassword, sendPasswordResetEmail, signInWithEmailAndPassword } from 'firebase/auth';
+import { httpsCallable } from 'firebase/functions';
 import { doc, setDoc } from 'firebase/firestore';
 import { Receipt, Package, WifiOff, Smartphone, LayoutTemplate, BarChart3, ShieldCheck, Users, Check, ArrowRight, Menu, X, Phone, Mail } from 'lucide-react';
-import { auth, db } from '../../firebase';
+import { auth, db, functions } from '../../firebase';
 import { BrandMark, Button, Card, Field, Modal, cn } from '../ui';
 
 const FEATURES = [
@@ -201,6 +202,15 @@ function Register({ setTab, showToast }) {
         setDoc(doc(db, 'users', res.user.uid), { email: form.email.trim(), status: 'Active', plan: '7 Days Free Trial', createdAt: Date.now() }),
         setDoc(doc(db, 'users', res.user.uid, 'settings', 'general'), { storeName: form.storeName.trim(), phone: form.phone, address: '', gstin: '', dlNumber: '' }),
       ]);
+      const referrerUid = new URLSearchParams(window.location.search).get('ref');
+      if (referrerUid) {
+        try {
+          await httpsCallable(functions, 'attachReferral')({ referrerUid });
+        } catch {
+          showToast('Account created. The referral could not be linked; contact support before subscribing.', 'error');
+          return;
+        }
+      }
       showToast('Account created. Your 7-day trial has started.');
     } catch (err) {
       showToast(authError(err), 'error');
@@ -224,6 +234,9 @@ function Register({ setTab, showToast }) {
 
 export default function PublicSite({ showToast, tab, setTab }) {
   const [menu, setMenu] = useState(false);
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).has('ref') && window.location.hash === '#register' && tab !== 'register') setTab('register');
+  }, [tab, setTab]);
   const current = ['home', 'features', 'pricing', 'contact', 'login', 'register'].includes(tab) ? tab : 'home';
   const goTab = (t) => { setTab(t); setMenu(false); window.scrollTo(0, 0); };
 

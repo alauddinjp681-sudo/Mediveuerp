@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useEffect, useState } from 'react';
-import { Home, Receipt, Package, Users, Truck, BarChart3, Crown, Settings, LogOut, Menu, X, Wifi, WifiOff, ShoppingCart, MoreHorizontal } from 'lucide-react';
+import { Home, Receipt, Package, Users, Truck, BarChart3, Crown, Settings, LogOut, Menu, X, Wifi, WifiOff, ShoppingCart, MoreHorizontal, Gift } from 'lucide-react';
 import { BrandMark, Spinner, cn } from '../ui';
 import { useSubscriptionTimer } from '../../lib/plan';
 
@@ -13,6 +13,7 @@ const PurchaseEntry = lazy(() => import('../PurchaseEntry'));
 const Reports = lazy(() => import('../Reports'));
 const SubscriptionPlans = lazy(() => import('../SubscriptionPlans'));
 const SettingsView = lazy(() => import('../SettingsView'));
+const ReferralCenter = lazy(() => import('../ReferralCenter'));
 
 const NAV = [
   { id: 'dashboard', label: 'Dashboard', icon: Home },
@@ -23,6 +24,7 @@ const NAV = [
   { id: 'purchaseEntry', label: 'Purchase Entry', icon: ShoppingCart },
   { id: 'reports', label: 'Reports', icon: BarChart3 },
   { id: 'plans', label: 'Upgrade Plan', icon: Crown },
+  { id: 'referrals', label: 'Referral rewards', icon: Gift },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 const BOTTOM = ['dashboard', 'billing', 'inventory', 'reports'];
@@ -82,7 +84,8 @@ export default function TenantApp({ user, userData, path, setPath, navigate, sho
       case 'supplierLedger': return <SupplierLedger user={user} supplier={activeSupplier} onBack={() => go('suppliers')} showToast={showToast} />;
       case 'purchaseEntry': return <PurchaseEntry user={user} preSelectedSupplier={activeSupplier} onNavigate={go} showToast={showToast} />;
       case 'reports': return <Reports data={{ ...data, medicines: data.inventory }} onOpenBill={(bill) => { setEditBill(bill); setPath('billing'); }} />;
-      case 'plans': return <SubscriptionPlans user={user} showToast={showToast} navigate={(v, p) => (v === 'public' ? navigate(v, p) : go(p === 'pos' ? 'billing' : p || 'dashboard'))} />;
+      case 'plans': return <SubscriptionPlans user={user} userData={userData} showToast={showToast} navigate={(v, p) => (v === 'public' ? navigate(v, p) : go(p === 'pos' ? 'billing' : p || 'dashboard'))} />;
+      case 'referrals': return <ReferralCenter user={user} showToast={showToast} />;
       case 'settings': return <SettingsView user={user} userData={userData} data={data} showToast={showToast} />;
       default: return <Dashboard userData={userData} data={data} go={go} />;
     }

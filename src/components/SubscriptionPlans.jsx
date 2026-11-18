@@ -1,219 +1,131 @@
-import React, { useState, useEffect } from 'react';
-import { db } from '../firebase';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import React, { useEffect, useState } from 'react';
+import { httpsCallable } from 'firebase/functions';
+import { updateDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { ArrowRight, Check, Crown, ShieldCheck, Sparkles } from 'lucide-react';
+import { db, functions } from '../firebase';
+import { Button, Card, PageHeader } from './ui';
 
-export default function SubscriptionPlans({ user, showToast, navigate }) {
-  const [loading, setLoading] = useState(false);
+const PLAN_CARDS = [
+  { id: 'trial', name: 'Starter', price: 0, display: '₹0', period: '7 days', text: 'Explore the full MEDIVEU workflow before upgrading.', features: ['All core ERP features', 'Offline-ready billing', 'No card required'], featured: false },
+  { id: 'monthly', name: 'Monthly', price: 249, display: '₹249', period: 'month', text: 'Flexible access for growing medical stores.', features: ['Unlimited billing', 'All bill templates', 'Verified referral rewards'], featured: true },
+  { id: 'yearly', name: 'Yearly', price: 2799, display: '₹2,799', period: 'year', text: 'Best value for stores using MEDIVEU all year.', features: ['Everything in Monthly', 'One annual payment', 'Priority support'], featured: false },
+];
 
-  // Razorpay Checkout script load karne ke liye
-  useEffect(() => {
-    const script = document.createElement('script');
-    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-    script.async = true;
-    document.body.appendChild(script);
-  }, []);
-
-  const handleSubscribe = async (planName, price) => {
-    if (!user) {
-      alert("Please login first to subscribe!");
-      if (navigate) navigate('public', 'login');
+function loadCheckout() {
+  if (window.Razorpay) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const current = document.querySelector('script[data-razorpay-checkout]');
+    if (current) {
+      current.addEventListener('load', resolve, { once: true });
+      current.addEventListener('error', reject, { once: true });
       return;
     }
+    const script = document.createElement('script');
+    script.dataset.razorpayCheckout = 'true';
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.async = true;
+    script.onload = resolve;
+    script.onerror = reject;
+    document.body.appendChild(script);
+  });
+}
 
+export default function SubscriptionPlans({ user, userData, showToast, navigate }) {
+  const [loading, setLoading] = useState(false);
+  const [checkoutReady, setCheckoutReady] = useState(Boolean(window.Razorpay));
+
+  useEffect(() => {
+    let active = true;
+    loadCheckout().then(() => active && setCheckoutReady(true)).catch(() => active && setCheckoutReady(false));
+    return () => { active = false; };
+  }, []);
+
+  const handleSubscribe = async (plan) => {
+    if (!user) {
+      showToast('Please sign in before subscribing.', 'error');
+      navigate?.('public', 'login');
+      return;
+    }
+    if (loading) return;
+    setLoading(true);
     try {
-      setLoading(true);
-
-      // 1. Agar Free Trial hai
-      if (price === 0) {
-        const userRef = doc(db, 'users', user.uid);
-        await updateDoc(userRef, {
+      if (plan.id === 'trial') {
+        await updateDoc(doc(db, 'users', user.uid), {
           plan: '7 Days Free Trial',
           status: 'Active',
-          updatedAt: serverTimestamp()
+          createdAt: Date.now(),
+          subscriptionEndsAt: null,
+          updatedAt: serverTimestamp(),
         });
-        if (showToast) showToast('7-Day Free Trial Activated Successfully!');
-        else alert("7-Day Free Trial Activated Successfully!");
-        if (navigate) navigate('app', 'pos');
+        showToast('7-day trial activated.');
+        navigate?.('app', 'pos');
         return;
       }
+      if (!checkoutReady || !window.Razorpay) throw new Error('Secure checkout could not load. Check your connection and try again.');
 
-      // 2. Paid Plans ke liye Backend (api/razorpay.js) ko call karna
-      if (showToast) showToast(`Initiating payment for ${planName}...`);
-      
-      const response = await fetch('/api/razorpay', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ amount: price }),
-      });
-
-      const order = await response.json();
-
-      if (!order.id) {
-        throw new Error(order.message || 'Failed to create payment order');
-      }
-
-      // 3. Razorpay Popup Configuration
-      const options = {
-        // VITE FIX: Yahan apni asli Live Key zaroor daalein!
-        key: import.meta.env.VITE_RAZORPAY_KEY_ID || 'rzp_live_TJllxy7SrOKeRr', 
+      const createOrder = httpsCallable(functions, 'createSubscriptionOrder');
+      const { data: order } = await createOrder({ planId: plan.id });
+      const checkout = new window.Razorpay({
+        key: order.keyId,
         amount: order.amount,
         currency: order.currency,
-        name: 'Mediveu ERP',
-        description: `Subscription for ${planName}`,
+        name: 'MEDIVEU ERP',
+        description: `${plan.name} subscription`,
         order_id: order.id,
-        handler: async function (response) {
+        prefill: { email: user.email || '' },
+        theme: { color: '#38bdf8' },
+        handler: async (paymentResponse) => {
           try {
-            // Payment successful hone par Firebase mein plan update karna
-            const userRef = doc(db, 'users', user.uid);
-            const planFullName = planName === 'Monthly' ? 'Monthly Plan (₹249)' : 'Yearly Plan (₹2799)';
-            
-            await updateDoc(userRef, {
-              plan: planFullName,
-              createdAt: Date.now(),
-              status: 'Active',
-              razorpayPaymentId: response.razorpay_payment_id,
-              updatedAt: serverTimestamp()
+            const verifyPayment = httpsCallable(functions, 'confirmSubscriptionPayment');
+            const { data: verification } = await verifyPayment({
+              orderId: paymentResponse.razorpay_order_id,
+              paymentId: paymentResponse.razorpay_payment_id,
+              signature: paymentResponse.razorpay_signature,
             });
-
-            if (showToast) showToast('Payment Successful! Plan Activated.');
-            else alert('Payment Successful! Plan Activated.');
-            
-            // POS screen par redirect karna
-            if (navigate) navigate('app', 'pos');
-            else window.location.reload();
-
-          } catch (err) {
-            console.error("Firebase Update Error:", err);
-            alert("Payment was successful, but failed to update plan in database. Please contact support.");
+            showToast(verification.referralReward ? 'Payment verified. Referral month added to your subscription!' : 'Payment verified. Your plan is active.');
+            navigate?.('app', 'pos');
+          } catch (error) {
+            console.error('Payment verification failed:', error);
+            showToast('Payment was received but could not yet be verified. Please contact support; do not pay again.', 'error');
+          } finally {
+            setLoading(false);
           }
         },
-        prefill: {
-          email: user.email || '',
-        },
-        theme: {
-          color: '#2563eb',
-        },
-      };
-
-      const paymentWindow = new window.Razorpay(options);
-      paymentWindow.open();
-
+        modal: { ondismiss: () => setLoading(false) },
+      });
+      checkout.on('payment.failed', () => {
+        setLoading(false);
+        showToast('Payment did not complete. You have not been charged.', 'error');
+      });
+      checkout.open();
     } catch (error) {
-      console.error("Subscription Error:", error);
-      alert("Error: " + (error.message || 'Something went wrong during payment setup.'));
-    } finally {
+      console.error('Subscription checkout error:', error);
+      showToast(error?.message || 'Could not start secure checkout.', 'error');
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 py-12 px-4 sm:px-6 lg:px-8 text-gray-100 font-sans">
-      <div className="text-center max-w-3xl mx-auto mb-12">
-        <h2 className="text-3xl font-extrabold text-white sm:text-4xl">
-          Simple, Transparent Pricing
-        </h2>
-        <p className="mt-4 text-lg text-gray-400">
-          Apne business ko grow karne ke liye best plan choose karein. No hidden fees.
-        </p>
+    <div className="max-w-6xl mx-auto py-4 sm:py-8">
+      <PageHeader title="Choose the right plan" subtitle="Secure checkout. Your subscription is activated only after the server verifies your payment." icon={<Crown size={20} />} />
+      <div className="grid md:grid-cols-3 gap-4 lg:gap-6 items-stretch">
+        {PLAN_CARDS.map((plan) => (
+          <Card key={plan.id} className={`relative p-5 sm:p-6 flex flex-col ${plan.featured ? 'border-brand-sky/40 shadow-glow bg-gradient-to-b from-sky-500/[0.08] to-ink-900' : ''}`}>
+            {plan.featured && <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-brand-sky px-3 py-1 text-[10px] tracking-wide text-ink-950 font-extrabold uppercase">Most popular</span>}
+            <div className="flex items-center justify-between gap-2 mt-1"><h2 className="text-lg font-bold text-white">{plan.name}</h2>{plan.featured && <Sparkles size={17} className="text-brand-sky" />}</div>
+            <p className="text-sm text-slate-400 mt-2 min-h-10">{plan.text}</p>
+            <p className="mt-5 text-4xl font-extrabold tracking-tight text-white">{plan.display}<span className="text-sm font-medium text-slate-400"> / {plan.period}</span></p>
+            <ul className="mt-6 space-y-3 flex-1">
+              {plan.features.map((feature) => <li key={feature} className="flex items-start gap-2 text-sm text-slate-300"><Check size={16} className="text-brand-green mt-0.5 shrink-0" /> {feature}</li>)}
+            </ul>
+            <Button variant={plan.featured ? 'primary' : 'secondary'} className="w-full mt-7" onClick={() => handleSubscribe(plan)} disabled={loading || (plan.id !== 'trial' && !checkoutReady)}>
+              {loading ? 'Processing…' : plan.id === 'trial' ? 'Start free trial' : `Subscribe ${plan.name}`} <ArrowRight size={16} />
+            </Button>
+          </Card>
+        ))}
       </div>
-
-      <div className="max-w-7xl mx-auto grid gap-8 lg:grid-cols-3 lg:gap-12">
-        
-        {/* 1. Free Trial Plan */}
-        <div className="bg-gray-900 rounded-2xl shadow-lg border border-gray-800 p-8 flex flex-col justify-between">
-          <div>
-            <h3 className="text-2xl font-semibold text-white">Starter</h3>
-            <p className="mt-4 flex items-baseline text-5xl font-extrabold text-white">
-              ₹0
-              <span className="ml-1 text-xl font-medium text-gray-400">/7 Days</span>
-            </p>
-            <p className="mt-6 text-gray-400">Naye users ke liye perfect trial.</p>
-            <ul className="mt-6 space-y-4">
-              <li className="flex items-start text-gray-300">
-                <span className="text-green-400 mr-2">✓</span> Full ERP Access
-              </li>
-              <li className="flex items-start text-gray-300">
-                <span className="text-green-400 mr-2">✓</span> Basic Support
-              </li>
-            </ul>
-          </div>
-          <button
-            onClick={() => handleSubscribe('Trial', 0)}
-            disabled={loading}
-            className="mt-8 block w-full bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 font-bold py-3 px-4 rounded-lg text-center transition cursor-pointer"
-          >
-            Start Free Trial
-          </button>
-        </div>
-
-        {/* 2. Monthly Plan */}
-        <div className="bg-gray-900 rounded-2xl shadow-xl border-2 border-blue-500 p-8 flex flex-col justify-between relative transform lg:scale-105">
-          <div className="absolute top-0 inset-x-0 flex justify-center -mt-4">
-            <span className="bg-blue-500 text-white text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wide">
-              Most Popular
-            </span>
-          </div>
-          <div>
-            <h3 className="text-2xl font-semibold text-white">Monthly</h3>
-            <p className="mt-4 flex items-baseline text-5xl font-extrabold text-white">
-              ₹249
-              <span className="ml-1 text-xl font-medium text-gray-400">/mo</span>
-            </p>
-            <p className="mt-6 text-gray-400">Growing businesses ke liye best.</p>
-            <ul className="mt-6 space-y-4">
-              <li className="flex items-start text-gray-300">
-                <span className="text-green-400 mr-2">✓</span> All Trial Features
-              </li>
-              <li className="flex items-start text-gray-300">
-                <span className="text-green-400 mr-2">✓</span> Premium Support
-              </li>
-              <li className="flex items-start text-gray-300">
-                <span className="text-green-400 mr-2">✓</span> Unlimited Billing
-              </li>
-            </ul>
-          </div>
-          <button
-            onClick={() => handleSubscribe('Monthly', 249)}
-            disabled={loading}
-            className="mt-8 block w-full bg-blue-600 text-white hover:bg-blue-700 font-bold py-3 px-4 rounded-lg text-center transition cursor-pointer shadow-lg shadow-blue-500/30"
-          >
-            {loading ? 'Processing...' : 'Subscribe Monthly'}
-          </button>
-        </div>
-
-        {/* 3. Yearly Plan */}
-        <div className="bg-gray-900 rounded-2xl shadow-lg border border-gray-800 p-8 flex flex-col justify-between">
-          <div>
-            <h3 className="text-2xl font-semibold text-white">Yearly</h3>
-            <p className="mt-4 flex items-baseline text-5xl font-extrabold text-white">
-              ₹2799
-              <span className="ml-1 text-xl font-medium text-gray-400">/yr</span>
-            </p>
-            <p className="mt-6 text-gray-400">Long-term savings (Save ₹189).</p>
-            <ul className="mt-6 space-y-4">
-              <li className="flex items-start text-gray-300">
-                <span className="text-green-400 mr-2">✓</span> All Monthly Features
-              </li>
-              <li className="flex items-start text-gray-300">
-                <span className="text-green-400 mr-2">✓</span> Priority 24/7 Support
-              </li>
-              <li className="flex items-start text-gray-300">
-                <span className="text-green-400 mr-2">✓</span> Advanced Reports
-              </li>
-            </ul>
-          </div>
-          <button
-            onClick={() => handleSubscribe('Yearly', 2799)}
-            disabled={loading}
-            className="mt-8 block w-full bg-indigo-600 text-white hover:bg-indigo-700 font-bold py-3 px-4 rounded-lg text-center transition cursor-pointer"
-          >
-            {loading ? 'Processing...' : 'Subscribe Yearly'}
-          </button>
-        </div>
-
-      </div>
+      <div className="mt-5 rounded-xl border border-white/[0.07] bg-white/[0.02] p-4 flex items-start gap-3 text-xs text-slate-400"><ShieldCheck size={17} className="text-brand-green shrink-0" /><p>Payments are verified on MEDIVEU&apos;s secure server before a plan or referral reward is applied. Referral rewards need 3 separate, verified monthly subscriptions; yearly purchases do not count.</p></div>
+      {userData?.subscriptionEndsAt && <p className="mt-3 text-center text-xs text-slate-500">Current plan: {userData.plan}. Expiry is updated automatically after verified payments.</p>}
     </div>
   );
 }
