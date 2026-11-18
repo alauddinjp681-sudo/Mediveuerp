@@ -1,11 +1,13 @@
 import { initializeApp } from 'firebase/app';
 import {
   initializeFirestore,
+  getFirestore,
   persistentLocalCache,
   persistentMultipleTabManager,
   memoryLocalCache,
 } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
+import { getFunctions } from 'firebase/functions';
 
 const env = import.meta.env;
 
@@ -27,10 +29,15 @@ function createDb() {
       localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
     });
   } catch (err) {
-    console.warn('Offline cache unavailable, using memory cache:', err?.message);
-    return initializeFirestore(app, { localCache: memoryLocalCache() });
+    console.warn('Offline cache unavailable; using the existing Firestore instance:', err?.message);
+    try {
+      return getFirestore(app);
+    } catch {
+      return initializeFirestore(app, { localCache: memoryLocalCache() });
+    }
   }
 }
 
 export const db = createDb();
 export const auth = getAuth(app);
+export const functions = getFunctions(app, 'asia-south1');

@@ -19,7 +19,7 @@ export function getPlanInfo(data) {
   const plan = data?.plan || '7 Days Free Trial';
   const status = data?.status || 'Active';
   const startedAt = toMillis(data?.createdAt) || Date.now();
-  const expiresAt = startedAt + getPlanDays(plan) * DAY;
+  const expiresAt = toMillis(data?.subscriptionEndsAt) || startedAt + getPlanDays(plan) * DAY;
   return {
     plan,
     status,

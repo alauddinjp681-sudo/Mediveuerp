@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createUserWithEmailAndPassword, sendPasswordResetEmail, signInWithEmailAndPassword } from 'firebase/auth';
+import { httpsCallable } from 'firebase/functions';
 import { doc, setDoc } from 'firebase/firestore';
-import { Receipt, Package, WifiOff, Smartphone, LayoutTemplate, BarChart3, ShieldCheck, Users, Check, ArrowRight, Menu, X, Phone, Mail } from 'lucide-react';
-import { auth, db } from '../../firebase';
+import { Receipt, Package, WifiOff, Smartphone, LayoutTemplate, BarChart3, ShieldCheck, Users, Check, ArrowRight, Menu, X, Phone, Mail, Download } from 'lucide-react';
+import { auth, db, functions } from '../../firebase';
 import { BrandMark, Button, Card, Field, Modal, cn } from '../ui';
 
 const FEATURES = [
@@ -66,6 +67,61 @@ function Home({ setTab }) {
   );
 }
 
+function InstallAppCard() {
+  const [installPrompt, setInstallPrompt] = useState(null);
+  const [installed, setInstalled] = useState(() => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true);
+  const [showInstructions, setShowInstructions] = useState(false);
+
+  useEffect(() => {
+    const onPrompt = (event) => {
+      event.preventDefault();
+      setInstallPrompt(event);
+    };
+    const onInstalled = () => {
+      setInstalled(true);
+      setInstallPrompt(null);
+    };
+    window.addEventListener('beforeinstallprompt', onPrompt);
+    window.addEventListener('appinstalled', onInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onPrompt);
+      window.removeEventListener('appinstalled', onInstalled);
+    };
+  }, []);
+
+  const install = async () => {
+    if (!installPrompt) {
+      setShowInstructions((visible) => !visible);
+      return;
+    }
+    await installPrompt.prompt();
+    const choice = await installPrompt.userChoice;
+    if (choice.outcome === 'accepted') setInstalled(true);
+    setInstallPrompt(null);
+  };
+
+  return (
+    <Card className="mt-6 p-5 sm:p-6 flex flex-col md:flex-row items-start md:items-center gap-4 justify-between">
+      <div className="flex items-start gap-3 min-w-0">
+        <span className="w-10 h-10 shrink-0 rounded-xl bg-brand-sky/10 text-brand-sky grid place-items-center"><Smartphone size={20} /></span>
+        <div className="min-w-0">
+          <h3 className="font-semibold text-white">{installed ? 'MEDIVEU ERP is installed' : 'Use MEDIVEU like an app'}</h3>
+          <p className="text-sm text-slate-400 mt-1">Install it on your phone or computer for a full-screen shortcut and offline access, or get the Android release.</p>
+          {showInstructions && !installed && (
+            <p className="text-sm text-slate-300 mt-2" role="status">On iPhone or iPad, tap Share then Add to Home Screen. On Android or desktop, open the browser menu and choose Install app or Add to Home screen.</p>
+          )}
+        </div>
+      </div>
+      <div className="flex flex-col sm:flex-row w-full md:w-auto gap-2 shrink-0">
+        {!installed && <Button variant="secondary" className="w-full md:w-auto" onClick={install}><Download size={16} /> {installPrompt ? 'Install web app' : showInstructions ? 'Hide install steps' : 'Install web app'}</Button>}
+        <a href="https://github.com/salauddeen680/Mediveuerp/releases/latest" target="_blank" rel="noreferrer" className="btn-ghost justify-center" aria-label="Open MEDIVEU Android APK downloads on GitHub">
+          <Download size={16} /> Android APK
+        </a>
+      </div>
+    </Card>
+  );
+}
+
 function FeaturesGrid() {
   return (
     <section className="max-w-6xl mx-auto px-4 py-16">
@@ -80,12 +136,7 @@ function FeaturesGrid() {
           </Card>
         ))}
       </div>
-      <Card className="mt-6 p-6 flex flex-col md:flex-row items-center gap-4 justify-between">
-        <div className="flex items-center gap-3">
-          <Smartphone className="text-brand-sky" />
-          <p className="text-sm text-slate-300">Install MEDIVEU ERP on your phone or PC from the browser menu: it opens like an app and works offline.</p>
-        </div>
-      </Card>
+      <InstallAppCard />
     </section>
   );
 }
@@ -201,11 +252,22 @@ function Register({ setTab, showToast }) {
         setDoc(doc(db, 'users', res.user.uid), { email: form.email.trim(), status: 'Active', plan: '7 Days Free Trial', createdAt: Date.now() }),
         setDoc(doc(db, 'users', res.user.uid, 'settings', 'general'), { storeName: form.storeName.trim(), phone: form.phone, address: '', gstin: '', dlNumber: '' }),
       ]);
-      showToast('Account created. Your 7-day trial has started.');
+      const referrerUid = new URLSearchParams(window.location.search).get('ref');
+      if (referrerUid) {
+        try {
+          await httpsCallable(functions, 'attachReferral')({ referrerUid });
+          showToast('Account created with referral linked. Your 7-day trial has started.');
+        } catch {
+          showToast('Account created, but the referral link could not be verified. Contact support before subscribing.', 'error');
+        }
+      } else {
+        showToast('Account created. Your 7-day trial has started.');
+      }
     } catch (err) {
       showToast(authError(err), 'error');
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   };
 
   return (
@@ -224,6 +286,9 @@ function Register({ setTab, showToast }) {
 
 export default function PublicSite({ showToast, tab, setTab }) {
   const [menu, setMenu] = useState(false);
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).has('ref') && window.location.hash === '#register' && tab !== 'register') setTab('register');
+  }, [tab, setTab]);
   const current = ['home', 'features', 'pricing', 'contact', 'login', 'register'].includes(tab) ? tab : 'home';
   const goTab = (t) => { setTab(t); setMenu(false); window.scrollTo(0, 0); };
 

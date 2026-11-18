@@ -1,0 +1,130 @@
+name: Android release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      deployFunctions:
+        description: Deploy Firebase payment and referral functions
+        required: true
+        default: false
+        type: boolean
+      publishRelease:
+        description: Publish signed APK and Play Store AAB to GitHub Releases
+        required: true
+        default: false
+        type: boolean
+      releaseVersion:
+        description: Release tag to create when publishing manually (for example v1.0.1)
+        required: false
+        default: v1.0.1
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  android-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up pnpm
+        run: corepack enable
+
+      - name: Install web dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Build web app for Android
+        run: pnpm android:sync
+
+      - name: Prepare release signing key
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$RELEASE_KEYSTORE_BASE64" ] || [ -z "$RELEASE_KEYSTORE_PASSWORD" ] || [ -z "$RELEASE_KEY_ALIAS" ] || [ -z "$RELEASE_KEY_PASSWORD" ]; then
+            echo "Configure the four Android signing secrets in GitHub repository settings before building a release."
+            exit 1
+          fi
+          echo "$RELEASE_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/mediveu-release.jks"
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/mediveu-release.jks" >> "$GITHUB_ENV"
+          echo "ANDROID_KEYSTORE_PASSWORD=$RELEASE_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "ANDROID_KEY_ALIAS=$RELEASE_KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "ANDROID_KEY_PASSWORD=$RELEASE_KEY_PASSWORD" >> "$GITHUB_ENV"
+
+      - name: Build signed APK and Play Store AAB
+        working-directory: android
+        run: ./gradlew --no-daemon assembleRelease bundleRelease
+
+      - name: Upload signed Android releases
+        uses: actions/upload-artifact@v4
+        with:
+          name: mediveu-android-release
+          path: |
+            android/app/build/outputs/apk/release/app-release.apk
+            android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Publish APK and Play Store bundle
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.publishRelease
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || inputs.releaseVersion }}
+          name: MEDIVEU ERP ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || inputs.releaseVersion }}
+          generate_release_notes: true
+          files: |
+            android/app/build/outputs/apk/release/app-release.apk
+            android/app/build/outputs/bundle/release/app-release.aab
+
+  deploy-firebase:
+    if: ${{ inputs.deployFunctions }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate Cloud Functions
+        run: npm ci --prefix functions && npm --prefix functions run lint
+
+      - name: Authenticate to Firebase project
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - name: Set Razorpay secrets in Firebase Secret Manager
+        env:
+          RAZORPAY_KEY_ID: ${{ secrets.RAZORPAY_KEY_ID }}
+          RAZORPAY_KEY_SECRET: ${{ secrets.RAZORPAY_KEY_SECRET }}
+        run: |
+          if [ -z "$RAZORPAY_KEY_ID" ] || [ -z "$RAZORPAY_KEY_SECRET" ]; then
+            echo "Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET as GitHub Actions secrets before deploying functions."
+            exit 1
+          fi
+          npx --yes firebase-tools@latest functions:secrets:set RAZORPAY_KEY_ID --project mediveuerp --data-file - <<< "$RAZORPAY_KEY_ID"
+          npx --yes firebase-tools@latest functions:secrets:set RAZORPAY_KEY_SECRET --project mediveuerp --data-file - <<< "$RAZORPAY_KEY_SECRET"
+
+      - name: Deploy Firebase Functions
+        run: npx --yes firebase-tools@latest deploy --only functions --project mediveuerp
