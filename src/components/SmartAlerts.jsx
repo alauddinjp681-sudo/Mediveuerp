@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
+import { storeCollection } from '../lib/storeAccess';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { AlertTriangle, PackageOpen } from 'lucide-react';
 
@@ -13,7 +14,7 @@ export default function SmartAlerts({ user, onNavigate }) {
     if (!user?.uid) return;
 
     // Sirf Inventory fetch karenge alerts ke liye
-    const unsubscribeInventory = onSnapshot(collection(db, 'users', user.uid, 'inventory'), (snapshot) => {
+    const unsubscribeInventory = onSnapshot(storeCollection(user.storeId, 'inventory'), (snapshot) => {
       const lowStock = [];
       const expiring = [];
       const today = new Date();

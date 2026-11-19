@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { httpsCallable } from 'firebase/functions';
-import { updateDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { ArrowRight, Check, Crown, ShieldCheck, Sparkles } from 'lucide-react';
-import { db, functions } from '../firebase';
+import { functions } from '../firebase';
 import { Button, Card, PageHeader } from './ui';
 
 const PLAN_CARDS = [
@@ -50,13 +49,8 @@ export default function SubscriptionPlans({ user, userData, showToast, navigate 
     setLoading(true);
     try {
       if (plan.id === 'trial') {
-        await updateDoc(doc(db, 'users', user.uid), {
-          plan: '7 Days Free Trial',
-          status: 'Active',
-          createdAt: Date.now(),
-          subscriptionEndsAt: null,
-          updatedAt: serverTimestamp(),
-        });
+        const activateTrial = httpsCallable(functions, 'activateStarterPlan');
+        await activateTrial();
         showToast('7-day trial activated.');
         navigate?.('app', 'pos');
         return;

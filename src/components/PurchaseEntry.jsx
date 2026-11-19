@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
+import { storeCollection, storeDocument } from '../lib/storeAccess';
 import { collection, onSnapshot, addDoc, updateDoc, doc, serverTimestamp, getDocs, query, where } from 'firebase/firestore';
 import { ShoppingCart, Save, Plus, Trash2, ArrowLeft } from 'lucide-react';
 
@@ -27,7 +28,7 @@ export default function PurchaseEntry({ user, onNavigate, preSelectedSupplier })
   // 1. Fetch Suppliers Dropdown
   useEffect(() => {
     if (!user?.uid) return;
-    const unsubscribe = onSnapshot(collection(db, 'users', user.uid, 'suppliers'), (snapshot) => {
+    const unsubscribe = onSnapshot(storeCollection(user.storeId, 'suppliers'), (snapshot) => {
       const suppData = [];
       snapshot.forEach(doc => suppData.push({ id: doc.id, ...doc.data() }));
       setSuppliers(suppData);
@@ -76,7 +77,7 @@ export default function PurchaseEntry({ user, onNavigate, preSelectedSupplier })
     setIsProcessing(true);
     try {
       // A. Save Purchase Bill
-      await addDoc(collection(db, 'users', user.uid, 'purchases'), {
+      await addDoc(storeCollection(user.storeId, 'purchases'), {
         billDetails,
         items,
         totals,
@@ -88,7 +89,7 @@ export default function PurchaseEntry({ user, onNavigate, preSelectedSupplier })
         if (item.name && item.qty > 0) {
           // Check if medicine with same batch already exists
           const q = query(
-            collection(db, 'users', user.uid, 'inventory'), 
+            storeCollection(user.storeId, 'inventory'),
             where('name', '==', item.name.toUpperCase()),
             where('batchNo', '==', item.batchNo.toUpperCase())
           );
@@ -98,7 +99,7 @@ export default function PurchaseEntry({ user, onNavigate, preSelectedSupplier })
             // Update existing stock
             const invDoc = snap.docs[0];
             const oldQty = Number(invDoc.data().qty) || 0;
-            await updateDoc(doc(db, 'users', user.uid, 'inventory', invDoc.id), {
+            await updateDoc(storeDocument(user.storeId, 'inventory', invDoc.id), {
               qty: oldQty + Number(item.qty),
               rate: Number(item.rate), // Update to new purchase rate
               mrp: Number(item.mrp),
@@ -106,7 +107,7 @@ export default function PurchaseEntry({ user, onNavigate, preSelectedSupplier })
             });
           } else {
             // Add as new stock item
-            await addDoc(collection(db, 'users', user.uid, 'inventory'), {
+            await addDoc(storeCollection(user.storeId, 'inventory'), {
               name: item.name.toUpperCase(),
               batchNo: item.batchNo.toUpperCase() || 'N/A',
               expiryDate: item.expiryDate,
@@ -121,7 +122,7 @@ export default function PurchaseEntry({ user, onNavigate, preSelectedSupplier })
       }
 
       // C. Update Supplier Ledger (Khata) - Hum par udhaar chadha
-      await addDoc(collection(db, 'users', user.uid, 'supplier_transactions'), {
+      await addDoc(storeCollection(user.storeId, 'supplier_transactions'), {
         supplierId: billDetails.supplierId,
         supplierName: billDetails.supplierName,
         type: 'DEBIT', // Humne maal kharida, paise dene baaki hain

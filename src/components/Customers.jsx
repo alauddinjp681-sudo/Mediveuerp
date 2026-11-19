@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
+import { storeCollection } from '../lib/storeAccess';
 import { collection, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
 import { Users, Plus, FileText, Search } from 'lucide-react';
 
 // 🔥 YAHAN HUMNE NAYI FILE KO LINK KIYA HAI 🔥
 import CustomerLedger from './CustomerLedger';
 
-export default function Customers({ user }) {
+export default function Customers({ user, canEdit = true }) {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -21,7 +22,7 @@ export default function Customers({ user }) {
   // Firebase se Customers fetch karna
   useEffect(() => {
     if (!user?.uid) return;
-    const unsubscribe = onSnapshot(collection(db, 'users', user.uid, 'customers'), (snapshot) => {
+    const unsubscribe = onSnapshot(storeCollection(user.storeId, 'customers'), (snapshot) => {
       const custData = [];
       snapshot.forEach(doc => custData.push({ id: doc.id, ...doc.data() }));
       setCustomers(custData);
@@ -35,7 +36,7 @@ export default function Customers({ user }) {
     e.preventDefault();
     if (!newCustomer.name) return alert("Customer Name is required");
     try {
-      await addDoc(collection(db, 'users', user.uid, 'customers'), {
+      await addDoc(storeCollection(user.storeId, 'customers'), {
         ...newCustomer,
         createdAt: serverTimestamp()
       });
@@ -50,7 +51,8 @@ export default function Customers({ user }) {
   if (selectedCustomerForLedger) {
     return (
       <CustomerLedger 
-        user={user} 
+        user={user}
+        canEdit={user.role !== 'accountant'}
         customer={selectedCustomerForLedger} 
         onBack={() => setSelectedCustomerForLedger(null)} 
       />
@@ -83,9 +85,9 @@ export default function Customers({ user }) {
               onChange={e => setSearchTerm(e.target.value)}
             />
           </div>
-          <button onClick={() => setShowAddModal(true)} className="flex items-center bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold shadow-md transition-colors shrink-0">
+          {canEdit && <button onClick={() => setShowAddModal(true)} className="flex items-center bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold shadow-md transition-colors shrink-0">
             <Plus size={18} className="mr-2"/> Add New
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -113,13 +115,12 @@ export default function Customers({ user }) {
                     <td className="p-4 font-semibold">{cust.phone || '-'}</td>
                     <td className="p-4 font-bold uppercase">{cust.gstin || '-'}</td>
                     <td className="p-4 text-center">
-                      {/* 🔥 LINK BUTTON: Ispe click karte hi CustomerLedger khulega 🔥 */}
-                      <button 
-                        onClick={() => setSelectedCustomerForLedger(cust)} 
+                      {user.role !== 'worker' ? <button
+                        onClick={() => setSelectedCustomerForLedger(cust)}
                         className="flex items-center justify-center w-full bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 py-2 rounded border border-emerald-500/20 font-bold transition-colors"
                       >
                         <FileText size={16} className="mr-2"/> View Ledger (Khata)
-                      </button>
+                      </button> : <span className="text-xs text-slate-500">Billing access</span>}
                     </td>
                   </tr>
                 ))
@@ -130,7 +131,7 @@ export default function Customers({ user }) {
       </div>
 
       {/* ADD CUSTOMER MODAL */}
-      {showAddModal && (
+      {canEdit && showAddModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-slate-800 border border-slate-600 rounded-xl w-full max-w-md shadow-2xl overflow-hidden">
             <div className="p-5 border-b border-slate-700 flex justify-between items-center bg-slate-900">

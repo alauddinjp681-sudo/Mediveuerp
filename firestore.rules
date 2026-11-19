@@ -1,0 +1,151 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function memberPath(storeId, uid) {
+      return /databases/$(database)/documents/stores/$(storeId)/members/$(uid);
+    }
+
+    function isStoreMember(storeId) {
+      return signedIn()
+        && exists(memberPath(storeId, request.auth.uid))
+        && get(memberPath(storeId, request.auth.uid)).data.status == 'active';
+    }
+
+    function hasRole(storeId, roles) {
+      return isStoreMember(storeId)
+        && get(memberPath(storeId, request.auth.uid)).data.role in roles;
+    }
+
+    function isOwnerOrManager(storeId) {
+      return hasRole(storeId, ['owner', 'manager']);
+    }
+
+    function legacyAccessAllowed(userId) {
+      let userPath = /databases/$(database)/documents/users/$(userId);
+      return request.auth.uid == userId
+        && (!exists(userPath) || (!('storeId' in get(userPath).data) && get(userPath).data.migrationStatus != 'in_progress'));
+    }
+
+    match /users/{userId} {
+      allow get: if signedIn() && request.auth.uid == userId;
+      allow list: if signedIn() && request.auth.token.admin == true;
+      allow create: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly(['email', 'status', 'plan', 'createdAt', 'storeName', 'phone', 'pendingInvitationCode'])
+        && request.resource.data.email == request.auth.token.email;
+      allow update, delete: if false;
+
+      match /payments/{paymentId} {
+        allow read: if signedIn() && request.auth.uid == userId;
+        allow write: if false;
+      }
+
+      match /{legacyPath=**} {
+        allow read, write: if legacyAccessAllowed(userId);
+      }
+    }
+
+    match /stores/{storeId} {
+      allow get: if isStoreMember(storeId);
+      allow list, create, update, delete: if false;
+
+      match /members/{memberId} {
+        allow get: if isStoreMember(storeId)
+          && (request.auth.uid == memberId || isOwnerOrManager(storeId));
+        allow list: if isOwnerOrManager(storeId);
+        allow create, update, delete: if false;
+      }
+
+      match /invitations/{invitationId} {
+        allow read, write: if false;
+      }
+
+      match /{collectionName}/{documentId} {
+        function roleCanRead() {
+          return isStoreMember(storeId)
+            && (collectionName != 'invitations')
+            && (collectionName != 'members')
+            && (collectionName != 'transactions' || hasRole(storeId, ['owner', 'manager', 'accountant']))
+            && (collectionName != 'supplier_transactions' || hasRole(storeId, ['owner', 'manager', 'accountant']))
+            && (collectionName != 'purchases' || hasRole(storeId, ['owner', 'manager', 'accountant']));
+        }
+
+        function roleCanCreate() {
+          return (collectionName == 'bills' && (
+              isOwnerOrManager(storeId)
+              || (hasRole(storeId, ['worker'])
+                && request.resource.data.createdBy == request.auth.uid
+                && request.resource.data.status in ['draft', 'final'])
+            ))
+            || (collectionName == 'customers' && hasRole(storeId, ['owner', 'manager', 'worker']))
+            || (collectionName == 'transactions' && hasRole(storeId, ['owner', 'manager', 'worker']))
+            || (collectionName == 'billEvents' && hasRole(storeId, ['owner', 'manager', 'worker']))
+            || (collectionName == 'supplier_transactions' && isOwnerOrManager(storeId))
+            || (collectionName == 'inventory' && isOwnerOrManager(storeId))
+            || (collectionName == 'suppliers' && isOwnerOrManager(storeId))
+            || (collectionName == 'purchases' && isOwnerOrManager(storeId))
+            || (collectionName == 'settings' && isOwnerOrManager(storeId));
+        }
+
+        function roleCanUpdate() {
+          return (collectionName == 'bills' && (
+              isOwnerOrManager(storeId)
+              || (hasRole(storeId, ['worker'])
+                && resource.data.createdBy == request.auth.uid
+                && resource.data.status == 'draft'
+                && request.resource.data.status in ['draft', 'final'])
+            ))
+            || (collectionName == 'inventory' && (
+              isOwnerOrManager(storeId)
+              || (hasRole(storeId, ['worker'])
+                && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['qty'])
+                && request.resource.data.qty >= 0
+                && request.resource.data.qty < resource.data.qty)
+            ))
+            || (collectionName == 'customers' && isOwnerOrManager(storeId))
+            || (collectionName == 'transactions' && isOwnerOrManager(storeId))
+            || (collectionName == 'supplier_transactions' && isOwnerOrManager(storeId))
+            || (collectionName == 'suppliers' && isOwnerOrManager(storeId))
+            || (collectionName == 'purchases' && isOwnerOrManager(storeId))
+            || (collectionName == 'settings' && isOwnerOrManager(storeId));
+        }
+
+        function roleCanDelete() {
+          return isOwnerOrManager(storeId)
+            && collectionName in ['bills', 'inventory', 'customers', 'transactions', 'supplier_transactions', 'suppliers', 'purchases'];
+        }
+
+        allow read: if roleCanRead();
+        allow create: if roleCanCreate();
+        allow update: if roleCanUpdate();
+        allow delete: if roleCanDelete();
+
+        match /events/{eventId} {
+          allow read: if isStoreMember(storeId);
+          allow create: if hasRole(storeId, ['owner', 'manager', 'worker']);
+          allow update, delete: if false;
+        }
+      }
+    }
+
+    match /admin/{document=**} {
+      allow read, write: if signedIn() && request.auth.token.admin == true;
+    }
+
+    match /referrals/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /referralStats/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -4,6 +4,8 @@ import { Download, Upload, Save } from 'lucide-react';
 import { db } from '../firebase';
 import { Button, Card, Field, PageHeader } from './ui';
 import { TEMPLATES } from './invoice-templates';
+import TeamAccess from './TeamAccess';
+import { storeCollection, storeDocument } from '../lib/storeAccess';
 
 const GENERAL_FIELDS = [
   ['storeName', 'Store Name', 'sm:col-span-2'],
@@ -27,8 +29,8 @@ export default function SettingsView({ user, userData, data, showToast }) {
   const save = (e) => {
     e.preventDefault();
     Promise.all([
-      setDoc(doc(db, 'users', user.uid, 'settings', 'general'), general, { merge: true }),
-      setDoc(doc(db, 'users', user.uid, 'settings', 'invoice'), invoice, { merge: true }),
+      setDoc(storeDocument(user.storeId, 'settings', 'general'), general, { merge: true }),
+      setDoc(storeDocument(user.storeId, 'settings', 'invoice'), invoice, { merge: true }),
     ]).catch(() => showToast('Failed to sync settings', 'error'));
     showToast('Settings saved');
   };
@@ -53,12 +55,12 @@ export default function SettingsView({ user, userData, data, showToast }) {
         const imported = JSON.parse(ev.target.result);
         if (!imported.exportDate) throw new Error('invalid');
         const batch = writeBatch(db);
-        const put = (name, list) => (list || []).forEach(({ id, ...rest }) => batch.set(id ? doc(db, 'users', user.uid, name, id) : doc(collection(db, 'users', user.uid, name)), rest, { merge: true }));
+        const put = (name, list) => (list || []).forEach(({ id, ...rest }) => batch.set(id ? storeDocument(user.storeId, name, id) : doc(storeCollection(user.storeId, name)), rest, { merge: true }));
         put('inventory', imported.inventory || imported.medicines);
         put('bills', imported.bills);
         put('customers', imported.customers);
         put('suppliers', imported.suppliers);
-        if (imported.settings?.general) batch.set(doc(db, 'users', user.uid, 'settings', 'general'), imported.settings.general, { merge: true });
+        if (imported.settings?.general) batch.set(storeDocument(user.storeId, 'settings', 'general'), imported.settings.general, { merge: true });
         batch.commit().catch(() => showToast('Restore sync failed', 'error'));
         showToast('Backup restored');
       } catch {
@@ -111,6 +113,8 @@ export default function SettingsView({ user, userData, data, showToast }) {
           </label>
         </div>
       </Card>
+
+      {userData?.role === 'owner' && <TeamAccess user={user} showToast={showToast} />}
     </form>
   );
 }

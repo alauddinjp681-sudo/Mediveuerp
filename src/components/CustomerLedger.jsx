@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
+import { storeCollection } from '../lib/storeAccess';
 import { collection, addDoc, query, where, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { ArrowLeft, Plus, IndianRupee, FileText, Download } from 'lucide-react';
 
-export default function CustomerLedger({ user, customer, onBack }) {
+export default function CustomerLedger({ user, customer, onBack, canEdit = true }) {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   
@@ -18,7 +19,7 @@ export default function CustomerLedger({ user, customer, onBack }) {
 
     // Database query: Is customer ka saara data date ke hisaab se lao
     const q = query(
-      collection(db, 'users', user.uid, 'transactions'),
+      storeCollection(user.storeId, 'transactions'),
       where('customerId', '==', customer.id)
     );
 
@@ -44,7 +45,7 @@ export default function CustomerLedger({ user, customer, onBack }) {
     }
 
     try {
-      await addDoc(collection(db, 'users', user.uid, 'transactions'), {
+      await addDoc(storeCollection(user.storeId, 'transactions'), {
         customerId: customer.id,
         customerName: customer.name,
         type: 'CREDIT', // CREDIT matlab customer ne paise jama karwaye
@@ -94,9 +95,9 @@ export default function CustomerLedger({ user, customer, onBack }) {
         </div>
 
         <div className="flex gap-4">
-          <button onClick={() => setShowPaymentModal(true)} className="flex items-center bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-lg font-bold transition-all shadow-md">
+          {canEdit && <button onClick={() => setShowPaymentModal(true)} className="flex items-center bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-lg font-bold transition-all shadow-md">
             <IndianRupee size={18} className="mr-2" /> Receive Payment
-          </button>
+          </button>}
           <button className="flex items-center bg-slate-700 hover:bg-slate-600 text-white px-5 py-2.5 rounded-lg font-bold transition-all shadow-md">
             <Download size={18} className="mr-2" /> Download Statement
           </button>
@@ -152,7 +153,7 @@ export default function CustomerLedger({ user, customer, onBack }) {
       </div>
 
       {/* 3. RECEIVE PAYMENT MODAL */}
-      {showPaymentModal && (
+      {canEdit && showPaymentModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-slate-800 border border-slate-600 rounded-xl w-full max-w-md shadow-2xl overflow-hidden">
             <div className="p-5 border-b border-slate-700 flex justify-between items-center bg-slate-900">
