@@ -49,8 +49,10 @@ function PlanBanner({ userData, go }) {
   );
 }
 
-export default function Dashboard({ userData, data, go }) {
-  const { bills, inventory, customers } = data;
+export default function Dashboard({ userData = {}, data = {}, go = () => {} }) {
+  const bills = Array.isArray(data?.bills) ? data.bills.filter(Boolean) : [];
+  const inventory = Array.isArray(data?.inventory) ? data.inventory.filter(Boolean) : [];
+  const customers = Array.isArray(data?.customers) ? data.customers.filter(Boolean) : [];
 
   const stats = useMemo(() => {
     const startToday = new Date(); startToday.setHours(0, 0, 0, 0);
@@ -88,10 +90,10 @@ export default function Dashboard({ userData, data, go }) {
           <p className="text-sm text-slate-400">Welcome back</p>
           <h1 className="text-2xl md:text-3xl font-extrabold text-white text-balance">{storeName || 'Your Store'}</h1>
         </div>
-        <Button onClick={() => go('billing')}>{userData.role === 'accountant' ? <><FileText size={16} /> View invoices</> : <><Plus size={16} /> New Bill</>}</Button>
+        <Button onClick={() => go('billing')}>{userData?.role === 'accountant' ? <><FileText size={16} /> View invoices</> : <><Plus size={16} /> New Bill</>}</Button>
       </div>
 
-      {userData.role === 'owner' && <PlanBanner userData={userData} go={go} />}
+      {userData?.role === 'owner' && <PlanBanner userData={userData} go={go} />}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         <Stat icon={IndianRupee} label="Today" value={formatMoney(stats.today)} sub={`Month ${formatMoney(stats.month)}`} tone="bg-brand-green/15 text-brand-green" />
@@ -120,7 +122,7 @@ export default function Dashboard({ userData, data, go }) {
         <Card className="p-5">
           <div className="flex items-center justify-between mb-3">
             <h2 className="font-bold text-white">Stock alerts</h2>
-            {userData.role !== 'accountant' && <button onClick={() => go('inventory')} className="text-xs text-brand-sky hover:underline">View stock</button>}
+            {userData?.role !== 'accountant' && <button onClick={() => go('inventory')} className="text-xs text-brand-sky hover:underline">View stock</button>}
           </div>
           <ul className="space-y-2 max-h-48 overflow-y-auto">
             {stats.expiring.slice(0, 5).map((i) => (
@@ -143,7 +145,7 @@ export default function Dashboard({ userData, data, go }) {
       <Card className="overflow-hidden">
         <div className="flex items-center justify-between p-5 pb-3">
           <h2 className="font-bold text-white">Recent invoices</h2>
-          {userData.role !== 'worker' && <button onClick={() => go('reports')} className="text-xs text-brand-sky hover:underline">All reports</button>}
+          {userData?.role !== 'worker' && <button onClick={() => go('reports')} className="text-xs text-brand-sky hover:underline">All reports</button>}
         </div>
         <ul className="divide-y divide-white/5">
           {stats.recent.map((b) => (

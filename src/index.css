@@ -153,6 +153,11 @@
   .auth-panel *, .view-mode-toggle { scroll-behavior: auto !important; transition-duration: .01ms !important; }
 }
 
+.promo-artboard { width: min(360px, 100%); height: auto; aspect-ratio: 9 / 16; }
+.promo-phone { width: 69%; max-width: 248px; aspect-ratio: 248 / 384; }
+.promo-phone-screen { height: 100%; }
+.promo-screen-content { width: 182%; margin-left: -41%; transform: scale(.55); transform-origin: top center; }
+
 /* Invoice paper: always light, independent of app theme */
 .invoice-paper {
   background: #ffffff;

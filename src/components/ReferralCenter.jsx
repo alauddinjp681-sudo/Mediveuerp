@@ -17,7 +17,8 @@ export default function ReferralCenter({ user, userData, showToast }) {
   const referralUrl = typeof window !== 'undefined' ? `${window.location.origin}/?ref=${encodeURIComponent(referralCode)}` : '';
   const verified = Number(data?.verified || 0);
   const progressCount = verified > 0 ? ((verified - 1) % 3) + 1 : 0;
-  const rewardDaysEarned = (data?.rewardMonthsEarned || 0) * 30;
+  const rewardDaysEarned = (Number(data?.rewardMonthsEarned) || 0) * 30;
+  const referrals = Array.isArray(data?.referrals) ? data.referrals.filter(Boolean) : [];
 
   const copy = async (value, message) => {
     try {
@@ -64,7 +65,7 @@ export default function ReferralCenter({ user, userData, showToast }) {
           <div className="grid gap-3 sm:grid-cols-3">
             <Card className="p-5"><p className="text-sm text-slate-400">Total referrals</p><p className="mt-2 text-3xl font-bold text-white">{isLoading ? '—' : data?.total || 0}</p></Card>
             <Card className="p-5"><p className="text-sm text-slate-400">Verified rewards</p><p className="mt-2 text-3xl font-bold text-white">{isLoading ? '—' : verified}</p><p className="mt-1 text-xs text-slate-500">Verified paid plan purchases</p></Card>
-            <Card className="p-5"><p className="text-sm text-slate-400">Subscription time earned</p><p className="mt-2 text-3xl font-bold text-white">{isLoading ? '—' : `${rewardDaysEarned} days`}</p><p className="mt-1 text-xs text-slate-500">{data?.rewardMonthsApplied || 0} months applied to your account</p></Card>
+            <Card className="p-5"><p className="text-sm text-slate-400">Subscription time earned</p><p className="mt-2 text-3xl font-bold text-white">{isLoading ? '—' : `${rewardDaysEarned} days`}</p><p className="mt-1 text-xs text-slate-500">{Number(data?.rewardMonthsApplied) || 0} months applied to your account</p></Card>
           </div>
           <Card className="p-5 sm:p-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -83,16 +84,20 @@ export default function ReferralCenter({ user, userData, showToast }) {
           </Card>
           <Card className="p-5 sm:p-6">
             <div className="flex items-center gap-2"><ShieldCheck size={18} className="text-brand-green" /><h2 className="font-bold text-white">Referral activity</h2></div>
-            {isLoading ? <p className="mt-4 text-sm text-slate-400" role="status">Loading referral activity…</p> : data?.referrals?.length ? (
+            {isLoading ? <p className="mt-4 text-sm text-slate-400" role="status">Loading referral activity…</p> : referrals.length ? (
               <ul className="mt-4 divide-y divide-white/[0.07]">
-                {data.referrals.map((referral) => (
-                  <li key={referral.id} className="flex items-center justify-between gap-3 py-3 text-sm">
-                    <span className="font-mono text-slate-300">{referral.id.slice(0, 5)}…{referral.id.slice(-4)}</span>
-                    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${referral.status === 'verified' ? 'bg-emerald-500/10 text-emerald-300' : 'bg-amber-500/10 text-amber-300'}`}>
-                      {referral.status === 'verified' && <Check size={13} />}{referral.status === 'verified' ? 'Verified' : 'Pending'}
-                    </span>
-                  </li>
-                ))}
+                {referrals.map((referral, index) => {
+                  const referralId = String(referral?.id || `referral-${index}`);
+                  const isVerified = referral?.status === 'verified';
+                  return (
+                    <li key={referralId} className="flex items-center justify-between gap-3 py-3 text-sm">
+                      <span className="font-mono text-slate-300">{referralId.slice(0, 5)}…{referralId.slice(-4)}</span>
+                      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${isVerified ? 'bg-emerald-500/10 text-emerald-300' : 'bg-amber-500/10 text-amber-300'}`}>
+                        {isVerified && <Check size={13} />}{isVerified ? 'Verified' : 'Pending'}
+                      </span>
+                    </li>
+                  );
+                })}
               </ul>
             ) : <p className="mt-4 text-sm text-slate-400">No referrals yet. Share your code to get started.</p>}
           </Card>
