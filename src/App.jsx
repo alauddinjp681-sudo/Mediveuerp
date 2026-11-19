@@ -5,8 +5,10 @@ import { collection, doc, onSnapshot } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { auth, db, functions } from './firebase';
 import { storeCollection, storeDocument } from './lib/storeAccess';
+import { describeSetupError } from './lib/setupError';
 import { Toast, Spinner, BrandMark } from './components/ui';
 import PublicSite from './components/public/PublicSite';
+import StoreSetupError from './components/StoreSetupError';
 
 const TenantApp = lazy(() => import('./components/layout/TenantApp'));
 const AdminPanel = lazy(() => import('./components/AdminPanel'));
@@ -36,8 +38,9 @@ export default function App() {
   const [userDoc, setUserDoc] = useState(null);
   const [storeData, setStoreData] = useState(null);
   const [membership, setMembership] = useState(null);
-  const [storeSetupError, setStoreSetupError] = useState('');
+  const [storeSetupError, setStoreSetupError] = useState(null);
   const [bootstrapAttempt, setBootstrapAttempt] = useState(0);
+  const [setupRunning, setSetupRunning] = useState(false);
   const [settings, setSettings] = useState({});
   const [inventory, setInventory] = useState([]);
   const [bills, setBills] = useState([]);
@@ -80,8 +83,24 @@ export default function App() {
     const unsubs = [];
     const onErr = (label) => (error) => console.error(`Listener ${label} failed`, error);
 
+    const accessError = (message) => ({ code: 'permission-denied', title: 'Store access unavailable', message, technical: '', retryable: true });
+
+    const callEnsureStore = async (payload) => {
+      const ensureStore = httpsCallable(functions, 'ensureStore', { timeout: 540000 });
+      try {
+        return await ensureStore(payload);
+      } catch (error) {
+        if (!active || !describeSetupError(error).autoRetry) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        if (!active) throw error;
+        return ensureStore(payload);
+      }
+    };
+
     const bootstrap = async () => {
-      setStoreSetupError('');
+      setMembership(null);
+      setStoreSetupError(null);
+      setSetupRunning(true);
       try {
         let registration = {};
         try {
@@ -89,18 +108,26 @@ export default function App() {
         } catch {
           registration = {};
         }
-        const ensureStore = httpsCallable(functions, 'ensureStore');
-        const { data: context } = await ensureStore({
+        const { data: context } = await callEnsureStore({
           invitationCode: registration.invitationCode || '',
           registration: { storeName: registration.storeName || '', phone: registration.phone || '' },
         });
         if (!active) return;
+        if (!context?.storeId) throw Object.assign(new Error('The setup service returned no store.'), { code: 'failed-precondition' });
         sessionStorage.removeItem('mediveu-registration');
-        setStoreSetupError('');
+        setStoreSetupError(null);
         const storeId = context.storeId;
 
         unsubs.push(onSnapshot(doc(db, 'users', user.uid), (snapshot) => setUserDoc(snapshot.exists() ? snapshot.data() : {}), onErr('account')));
-        unsubs.push(onSnapshot(storeDocument(storeId, 'members', user.uid), (snapshot) => setMembership(snapshot.exists() ? snapshot.data() : null), onErr('membership')));
+        unsubs.push(onSnapshot(storeDocument(storeId, 'members', user.uid), (snapshot) => {
+          if (!active) return;
+          const member = snapshot.data();
+          if (member?.status === 'active' && ['owner','manager','worker','accountant'].includes(member.role)) setMembership(member);
+          else { setMembership(null); setStoreSetupError(accessError('Your store membership is not active. Contact the store owner.')); }
+        }, (error) => {
+          console.error('Membership listener failed', error);
+          if (active) { setMembership(null); setStoreSetupError(accessError('Your store access could not be verified. Firestore rules may not be deployed yet.')); }
+        }));
         unsubs.push(onSnapshot(doc(db, 'stores', storeId), (snapshot) => setStoreData(snapshot.exists() ? snapshot.data() : null), onErr('store')));
         unsubs.push(onSnapshot(storeCollection(storeId, 'settings'), (snapshot) => {
           const next = {};
@@ -112,8 +139,11 @@ export default function App() {
         unsubs.push(onSnapshot(storeCollection(storeId, 'customers'), (snapshot) => setCustomers(docsOf(snapshot)), onErr('customers')));
         unsubs.push(onSnapshot(storeCollection(storeId, 'suppliers'), (snapshot) => setSuppliers(docsOf(snapshot)), onErr('suppliers')));
       } catch (error) {
-        console.error('Store setup failed:', error);
-        if (active) setStoreSetupError(error?.message || 'Your store could not be opened. Your existing data has not been removed.');
+        const described = describeSetupError(error);
+        console.error('Store setup failed', { code: described.code, details: error?.details, message: error?.message });
+        if (active) setStoreSetupError(described);
+      } finally {
+        if (active) setSetupRunning(false);
       }
     };
 
@@ -138,7 +168,7 @@ export default function App() {
     try {
       await signOut(auth);
       setUserDoc(null);
-      setStoreData(null); setMembership(null); setStoreSetupError('');
+      setStoreData(null); setMembership(null); setStoreSetupError(null);
       setBills([]); setInventory([]); setCustomers([]); setSuppliers([]); setSettings({});
       navigate('public', 'home');
       showToast('Logged out');
@@ -153,7 +183,7 @@ export default function App() {
       ...(userDoc || {}),
       ...(storeData || {}),
       storeId: userDoc?.storeId,
-      role: membership?.role || userDoc?.role || 'worker',
+      role: membership?.role,
       email: userDoc?.email || user?.email,
       plan: storeData?.plan || userDoc?.plan || '7 Days Free Trial',
       status: storeData?.status || userDoc?.status || 'Active',
@@ -170,17 +200,16 @@ export default function App() {
   let content;
   if (view === 'admin') {
     content = isAdminAuth ? <AdminPanel navigate={navigate} /> : <AdminLogin onLogin={handleAdminLogin} navigate={navigate} />;
-  } else if (!authReady || (user && view === 'tenant' && userDoc === null && !storeSetupError)) {
+  } else if (!authReady || (user && view === 'tenant' && (!userDoc || !membership) && !storeSetupError)) {
     content = <FullScreenLoader />;
   } else if (view === 'tenant' && user && storeSetupError) {
     content = (
-      <main className="min-h-dvh flex items-center justify-center bg-ink-950 p-6 text-center">
-        <section className="max-w-lg rounded-2xl border border-amber-400/20 bg-amber-400/[0.06] p-7">
-          <h1 className="text-xl font-bold text-white">Store setup paused safely</h1>
-          <p className="mt-3 text-sm leading-6 text-slate-300">{storeSetupError}</p>
-          <button type="button" onClick={() => setBootstrapAttempt((attempt) => attempt + 1)} className="mt-5 rounded-xl bg-brand-sky px-4 py-2 text-sm font-semibold text-ink-950">Retry setup</button>
-        </section>
-      </main>
+      <StoreSetupError
+        error={storeSetupError}
+        running={setupRunning}
+        onRetry={() => { if (!setupRunning) setBootstrapAttempt((attempt) => attempt + 1); }}
+        onSignOut={handleLogout}
+      />
     );
   } else if (view === 'tenant' && user) {
     content = (

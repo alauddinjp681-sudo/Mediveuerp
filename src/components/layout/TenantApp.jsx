@@ -75,7 +75,7 @@ export default function TenantApp({ user, userData, path, setPath, navigate, sho
 
   const go = (id, extra) => {
     if (!canAccessView(role, id)) return;
-    if (id === 'billing' && !extra) setEditBill(null);
+    if (id === 'billing') setEditBill(extra || null);
     if (id === 'purchaseEntry' || id === 'supplierLedger') setActiveSupplier(extra || null);
     setPath(id);
     setDrawer(false);
@@ -85,14 +85,14 @@ export default function TenantApp({ user, userData, path, setPath, navigate, sho
   const storeName = userData?.settings?.general?.storeName || 'My Store';
 
   const page = (() => {
-    switch (path) {
+    switch (canAccessView(role, path) ? path : 'dashboard') {
       case 'billing': return <BillingPOS user={user} userData={userData} editBill={editBill} onClearEdit={() => setEditBill(null)} showToast={showToast} bills={data.bills} inventory={data.inventory} customers={data.customers} navigate={go} />;
       case 'inventory': return <Inventory user={user} showToast={showToast} canEdit={canEditInventory(role)} />;
       case 'customers': return <Customers user={user} showToast={showToast} canEdit={role !== 'accountant'} canManageBills={canManageBills(role)} />;
       case 'suppliers': return <Suppliers user={user} onNavigate={go} showToast={showToast} canEdit={canManageStore(role)} />;
       case 'supplierLedger': return <SupplierLedger user={user} supplier={activeSupplier} onBack={() => go('suppliers')} showToast={showToast} canEdit={canManageStore(role)} />;
       case 'purchaseEntry': return <PurchaseEntry user={user} preSelectedSupplier={activeSupplier} onNavigate={go} showToast={showToast} canEdit={canManageStore(role)} />;
-      case 'reports': return <Reports data={{ ...data, medicines: data.inventory }} role={role} onOpenBill={canManageBills(role) ? (bill) => { setEditBill(bill); setPath('billing'); } : undefined} />;
+      case 'reports': return <Reports data={{ ...data, medicines: data.inventory }} role={role} onOpenBill={(bill) => go('billing', bill)} />;
       case 'plans': return <SubscriptionPlans user={user} userData={userData} showToast={showToast} navigate={(v, p) => (v === 'public' ? navigate(v, p) : go(p === 'pos' ? 'billing' : p || 'dashboard'))} />;
       case 'referrals': return <ReferralCenter user={user} showToast={showToast} />;
       case 'settings': return <SettingsView user={user} userData={userData} data={data} showToast={showToast} />;

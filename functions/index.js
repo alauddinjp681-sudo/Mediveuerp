@@ -310,28 +310,84 @@ async function acceptInvitation(db, uid, email, rawCode) {
   });
 }
 
+const SETUP_STAGE_LABELS = {
+  profile: 'reading your account profile',
+  invitation: 'accepting your store invitation',
+  membership: 'verifying your store membership',
+  reserve: 'preparing your store profile',
+  store: 'creating your shared store',
+  migrate: 'copying your existing records',
+  finalize: 'activating owner access',
+};
+
+function setupError(stage, error, extra = {}) {
+  if (error instanceof HttpsError) {
+    return new HttpsError(error.code, error.message, { stage, retryable: error.code !== 'permission-denied', ...(error.details || {}), ...extra });
+  }
+  const rawCode = String(error?.code ?? '');
+  const reason = String(error?.message || error || 'Unknown error').slice(0, 300);
+  const permission = rawCode === '7' || /permission|PERMISSION_DENIED/i.test(rawCode + reason);
+  const busy = ['4', '10', '14', 'aborted', 'unavailable', 'deadline-exceeded'].includes(rawCode)
+    || /deadline|unavailable|contention|aborted/i.test(reason);
+  const code = permission ? 'permission-denied' : busy ? 'unavailable' : 'internal';
+  const step = SETUP_STAGE_LABELS[stage] || 'setting up your store';
+  const message = permission
+    ? `Setup stopped while ${step}: the server was not allowed to write this data. Check the Cloud Functions service account permissions.`
+    : busy
+      ? `Setup was interrupted while ${step} because the database was busy. Your data is safe — press Retry setup to continue.`
+      : `Setup stopped while ${step}. Your original records are unchanged — press Retry setup to resume.`;
+  return new HttpsError(code, message, { stage, reason, retryable: !permission, ...extra });
+}
+
+async function ensureOwnerMembership(db, uid, email, storeId) {
+  const storeSnap = await db.doc(`stores/${storeId}`).get();
+  if (!storeSnap.exists || storeSnap.get('ownerUid') !== uid) return null;
+  const memberRef = db.doc(`stores/${storeId}/members/${uid}`);
+  await memberRef.set({ uid, email: normalizeEmail(email), role: 'owner', status: 'active', joinedAt: FieldValue.serverTimestamp() }, { merge: true });
+  return memberRef.get();
+}
+
 exports.ensureStore = onCall({ timeoutSeconds: 540 }, async (request) => {
-  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in to open your store.');
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in to open your store.', { stage: 'auth', retryable: false });
+  let stage = 'profile';
+  try {
+    return await runEnsureStore(request, (next) => { stage = next; });
+  } catch (error) {
+    const failure = setupError(stage, error);
+    console.error('ensureStore failed', { uid: request.auth.uid, stage, code: failure.code, reason: error?.message || String(error) });
+    throw failure;
+  }
+});
+
+async function runEnsureStore(request, setStage) {
   const db = getFirestore();
   const uid = request.auth.uid;
+  const authEmail = request.auth.token.email;
   const userRef = db.doc(`users/${uid}`);
   let userSnap = await userRef.get();
   let userData = userSnap.exists ? userSnap.data() : {};
   const invitationCode = String(request.data?.invitationCode || userData.pendingInvitationCode || '').trim();
 
-  if (invitationCode) {
-    const accepted = await acceptInvitation(db, uid, request.auth.token.email, invitationCode);
+  if (invitationCode && !userData.storeId) {
+    setStage('invitation');
+    const accepted = await acceptInvitation(db, uid, authEmail, invitationCode);
     return { ...accepted, migrationStatus: 'complete' };
   }
 
   if (userData.storeId) {
-    const memberSnap = await db.doc(`stores/${userData.storeId}/members/${uid}`).get();
-    if (!memberSnap.exists || memberSnap.get('status') !== 'active') {
-      throw new HttpsError('permission-denied', 'Your store membership is not active. Contact the store owner.');
+    setStage('membership');
+    let memberSnap = await db.doc(`stores/${userData.storeId}/members/${uid}`).get();
+    if (!memberSnap.exists) memberSnap = await ensureOwnerMembership(db, uid, authEmail || userData.email, userData.storeId);
+    if (!memberSnap?.exists || memberSnap.get('status') !== 'active') {
+      throw new HttpsError('permission-denied', 'Your store membership is not active. Ask the store owner to re-invite you.');
     }
-    return { storeId: userData.storeId, role: memberSnap.get('role'), migrationStatus: userData.migrationStatus || 'complete' };
+    if (userData.pendingInvitationCode || userData.migrationStatus !== 'complete') {
+      await userRef.set({ pendingInvitationCode: FieldValue.delete(), migrationStatus: 'complete', migrationError: FieldValue.delete() }, { merge: true });
+    }
+    return { storeId: userData.storeId, role: memberSnap.get('role'), migrationStatus: 'complete' };
   }
 
+  setStage('reserve');
   const registration = request.data?.registration || {};
   await db.runTransaction(async (transaction) => {
     const currentSnap = await transaction.get(userRef);
@@ -359,11 +415,14 @@ exports.ensureStore = onCall({ timeoutSeconds: 540 }, async (request) => {
   userSnap = await userRef.get();
   userData = userSnap.data() || {};
   if (userData.storeId) {
-    const memberSnap = await db.doc(`stores/${userData.storeId}/members/${uid}`).get();
-    if (!memberSnap.exists) throw new HttpsError('failed-precondition', 'Store membership is not ready. Please retry.');
+    setStage('membership');
+    let memberSnap = await db.doc(`stores/${userData.storeId}/members/${uid}`).get();
+    if (!memberSnap.exists) memberSnap = await ensureOwnerMembership(db, uid, authEmail || userData.email, userData.storeId);
+    if (!memberSnap?.exists) throw new HttpsError('failed-precondition', 'Store membership is not ready yet. Press Retry setup.');
     return { storeId: userData.storeId, role: memberSnap.get('role'), migrationStatus: 'complete' };
   }
 
+  setStage('store');
   const storeId = userData.migrationStoreId || uid;
   const storeRef = db.doc(`stores/${storeId}`);
   const legacySettings = await userRef.collection('settings').doc('general').get();
@@ -389,8 +448,11 @@ exports.ensureStore = onCall({ timeoutSeconds: 540 }, async (request) => {
     }, { merge: true });
   }
 
+  let currentCollection = '';
   try {
+    setStage('migrate');
     for (const collectionName of STORE_COLLECTIONS_TO_MIGRATE) {
+      currentCollection = collectionName;
       const source = userRef.collection(collectionName);
       const target = storeRef.collection(collectionName);
       let lastDocument = null;
@@ -411,10 +473,12 @@ exports.ensureStore = onCall({ timeoutSeconds: 540 }, async (request) => {
       }
       const targetCount = await target.count().get();
       if (targetCount.data().count < copied) {
-        throw new Error(`Verification failed for ${collectionName}`);
+        throw new Error(`Verification failed for ${collectionName}: expected ${copied}, found ${targetCount.data().count}`);
       }
     }
 
+    setStage('finalize');
+    currentCollection = '';
     const memberRef = storeRef.collection('members').doc(uid);
     const batch = db.batch();
     batch.set(memberRef, {
@@ -436,12 +500,14 @@ exports.ensureStore = onCall({ timeoutSeconds: 540 }, async (request) => {
     await batch.commit();
     return { storeId, role: 'owner', migrationStatus: 'complete' };
   } catch (error) {
-    await userRef.set({ migrationStatus: 'error', migrationError: 'Migration paused; original records are unchanged.' }, { merge: true });
-    await storeRef.set({ migrationStatus: 'error' }, { merge: true });
-    console.error('Store migration paused:', uid, error?.message || error);
-    throw new HttpsError('internal', 'Store setup paused safely. Your original data is unchanged; retry to resume migration.');
+    const reason = String(error?.message || error).slice(0, 300);
+    await Promise.allSettled([
+      userRef.set({ migrationStatus: 'error', migrationError: reason, migrationFailedAt: FieldValue.serverTimestamp() }, { merge: true }),
+      storeRef.set({ migrationStatus: 'error' }, { merge: true }),
+    ]);
+    throw setupError(currentCollection ? 'migrate' : 'finalize', error, currentCollection ? { collection: currentCollection } : {});
   }
-});
+}
 
 exports.createStoreInvitation = onCall(async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in to invite a teammate.');

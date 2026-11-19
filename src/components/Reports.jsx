@@ -12,7 +12,7 @@ const Card = ({ children, className = '' }) => (
 
 export default function Reports({ data, onOpenBill }) {
   // CRASH PREVENTION: Agar data.bills nahi hai toh khali array le lo
-  const billsArray = data?.bills || [];
+  const billsArray = (data?.bills || []).filter(b => b.status !== 'draft' && !['estimate', 'proforma'].includes(b.invoiceDetails?.docType));
 
   // Total Revenue Calculation (Safe way)
   const totalSales = billsArray.reduce((sum, b) => {
@@ -41,7 +41,7 @@ export default function Reports({ data, onOpenBill }) {
         'Customer Name': bill.buyerDetails?.name || 'Unknown',
         'Customer GST': bill.buyerDetails?.gstin || 'N/A',
         'Taxable Amount': (bill.totals?.taxableValue || 0).toFixed(2),
-        'Total GST': ((bill.totals?.cgst || 0) + (bill.totals?.sgst || 0)).toFixed(2),
+        'Total GST': (bill.totals?.gstTotal ?? ((bill.totals?.cgst || 0) + (bill.totals?.sgst || 0) + (bill.totals?.igst || 0))).toFixed(2),
         'Grand Total': (bill.totals?.grandTotal || 0).toFixed(2)
       };
     });
@@ -141,7 +141,7 @@ export default function Reports({ data, onOpenBill }) {
                           }}
                           className="text-blue-400 hover:text-white font-bold text-xs bg-blue-500/10 hover:bg-blue-600 px-4 py-2 rounded-md border border-blue-500/20 transition-all cursor-pointer shadow-sm"
                         >
-                          Open / Edit Bill
+                          Open invoice
                         </button>
                       </td>
                     </tr>
