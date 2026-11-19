@@ -16,8 +16,8 @@ const FEATURES = [
 
 const PLANS = [
   { name: 'Free Trial', price: '0', period: '7 days', text: 'All features, no card required.', cta: 'Start Free Trial' },
-  { name: 'Monthly', price: '249', period: 'month', text: 'Full ERP access with all updates.', cta: 'Choose Monthly', featured: true },
-  { name: 'Yearly', price: '2,799', period: 'year', text: 'Best value. Save over 6% yearly.', cta: 'Choose Yearly' },
+  { name: 'Monthly', price: '249', period: 'month', text: 'Paid plan activation is temporarily unavailable.', cta: 'Contact support', featured: true },
+  { name: 'Yearly', price: '2,799', period: 'year', text: 'Paid plan activation is temporarily unavailable.', cta: 'Contact support' },
 ];
 
 const TABS = ['home', 'features', 'pricing', 'contact'];
@@ -155,10 +155,11 @@ function Pricing({ setTab }) {
             <h3 className="font-bold text-white text-lg">{p.name}</h3>
             <div className="mt-3 text-4xl font-extrabold text-white">₹{p.price}<span className="text-sm font-medium text-slate-400"> / {p.period}</span></div>
             <p className="text-sm text-slate-400 mt-2 flex-1">{p.text}</p>
-            <Button variant={p.featured ? 'primary' : 'secondary'} className="mt-6 w-full" onClick={() => setTab('register')}>{p.cta}</Button>
+            <Button variant={p.featured ? 'primary' : 'secondary'} className="mt-6 w-full" onClick={() => setTab(p.name === 'Free Trial' ? 'register' : 'contact')}>{p.cta}</Button>
           </Card>
         ))}
       </div>
+      <p className="mt-5 text-center text-xs text-slate-500">Paid checkout is not available in this client-only app. Contact support for plan availability; no payment is taken here.</p>
     </section>
   );
 }
@@ -275,7 +276,6 @@ function Register({ setTab, showToast }) {
       storeName: form.storeName.trim(),
       phone: form.phone.trim(),
       invitationCode: form.invitationCode.trim(),
-      referrerUid: new URLSearchParams(window.location.search).get('ref') || '',
     };
     sessionStore.setItem('mediveu-registration', JSON.stringify(registration));
     try {

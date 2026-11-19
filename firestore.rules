@@ -176,7 +176,14 @@ service cloud.firestore {
             'uid', 'email', 'role', 'status', 'joinedAt', 'invitationId', 'invitedBy'
           ])
           && (canCreateOwnerMembership() || canCreateInvitedMembership());
-        allow update, delete: if false;
+        allow update: if signedIn()
+          && request.auth.uid == storeId
+          && hasRole(storeId, ['owner'])
+          && memberId != storeId
+          && resource.data.role != 'owner'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role'])
+          && request.resource.data.role in ['manager', 'worker', 'accountant'];
+        allow delete: if false;
       }
 
       match /invitations/{invitationId} {
@@ -277,7 +284,25 @@ service cloud.firestore {
         && resource.data.email == request.auth.token.email
         && (resource.data.status == 'pending'
           || (resource.data.status == 'accepted' && resource.data.acceptedUid == request.auth.uid));
-      allow list, create, delete: if false;
+      allow list, delete: if false;
+      allow create: if signedIn()
+        && invitationId.matches('^[a-f0-9]{64}$')
+        && request.resource.data.keys().hasOnly([
+          'storeId', 'email', 'role', 'status', 'createdBy', 'createdAt', 'expiresAt'
+        ])
+        && request.resource.data.storeId is string
+        && request.resource.data.storeId.size() > 0
+        && hasRole(request.resource.data.storeId, ['owner'])
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.email is string
+        && request.resource.data.email.size() > 0
+        && request.resource.data.email.size() <= 254
+        && request.resource.data.role in ['manager', 'worker', 'accountant']
+        && request.resource.data.status == 'pending'
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.expiresAt is timestamp
+        && request.resource.data.expiresAt > request.time
+        && request.resource.data.expiresAt <= request.time + duration.value(14, 'd');
       allow update: if signedIn()
         && resource.data.email == request.auth.token.email
         && resource.data.status == 'pending'

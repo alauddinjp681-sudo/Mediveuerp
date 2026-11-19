@@ -7,7 +7,6 @@ import {
   memoryLocalCache,
 } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
-import { getFunctions } from 'firebase/functions';
 
 const env = import.meta.env;
 const firebaseEnvKeys = [
@@ -62,4 +61,3 @@ function createDb() {
 
 export const db = createDb();
 export const auth = getAuth(app);
-export const functions = getFunctions(app, 'asia-south1');

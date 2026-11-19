@@ -290,7 +290,7 @@ export async function setupStoreForUser(user, registration = {}) {
     if (!member.exists() || member.get('status') !== 'active' || !['owner', 'manager', 'worker', 'accountant'].includes(member.get('role'))) {
       throw Object.assign(new Error('Your store membership is not active. Ask the store owner to re-invite you.'), { code: 'permission-denied' });
     }
-    if (userData.migrationStatus !== 'complete' || userData.migrationError || userData.migrationFailedAt || userData.pendingInvitationCode) {
+    if (userData.role !== member.get('role') || userData.migrationStatus !== 'complete' || userData.migrationError || userData.migrationFailedAt || userData.pendingInvitationCode) {
       await setDoc(userRef, {
         role: member.get('role'),
         migrationStatus: 'complete',
