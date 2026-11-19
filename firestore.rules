@@ -67,11 +67,12 @@ service cloud.firestore {
       match /{collectionName}/{documentId} {
         function roleCanRead() {
           return isStoreMember(storeId)
-            && (collectionName != 'invitations')
-            && (collectionName != 'members')
+            && collectionName in ['settings', 'inventory', 'bills', 'customers', 'suppliers', 'purchases', 'transactions', 'supplier_transactions', 'payments']
+            && (collectionName != 'suppliers' || hasRole(storeId, ['owner', 'manager', 'accountant']))
             && (collectionName != 'transactions' || hasRole(storeId, ['owner', 'manager', 'accountant']))
             && (collectionName != 'supplier_transactions' || hasRole(storeId, ['owner', 'manager', 'accountant']))
-            && (collectionName != 'purchases' || hasRole(storeId, ['owner', 'manager', 'accountant']));
+            && (collectionName != 'purchases' || isOwnerOrManager(storeId))
+            && (collectionName != 'payments' || isOwnerOrManager(storeId));
         }
 
         function roleCanCreate() {

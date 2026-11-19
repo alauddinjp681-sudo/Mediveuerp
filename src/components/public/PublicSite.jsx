@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { createUserWithEmailAndPassword, sendPasswordResetEmail, signInWithEmailAndPassword } from 'firebase/auth';
-import { httpsCallable } from 'firebase/functions';
 import { Receipt, Package, WifiOff, Smartphone, LayoutTemplate, BarChart3, ShieldCheck, Users, Check, ArrowRight, Menu, X, Phone, Mail, Download, LockKeyhole, Sparkles } from 'lucide-react';
-import { auth, functions } from '../../firebase';
+import { auth } from '../../firebase';
+import { sessionStore } from '../../lib/sessionStore';
 import { BrandMark, Button, Card, Field, cn } from '../ui';
 
 const FEATURES = [
@@ -24,12 +24,16 @@ const TABS = ['home', 'features', 'pricing', 'contact'];
 
 function authError(err) {
   const map = {
-    'auth/invalid-credential': 'Invalid email or password',
-    'auth/user-not-found': 'No account found with this email',
-    'auth/wrong-password': 'Invalid email or password',
+    'auth/invalid-credential': 'Invalid email or password.',
+    'auth/user-not-found': 'No account found with this email.',
+    'auth/wrong-password': 'Invalid email or password.',
+    'auth/invalid-email': 'Enter a valid email address.',
     'auth/email-already-in-use': 'This email is already registered. Please log in.',
-    'auth/weak-password': 'Password must be at least 6 characters',
-    'auth/network-request-failed': 'No internet connection. Please connect to log in.',
+    'auth/weak-password': 'Password must be at least 6 characters.',
+    'auth/too-many-requests': 'Too many attempts. Wait a few minutes, then try again.',
+    'auth/user-disabled': 'This account is disabled. Contact MEDIVEU support.',
+    'auth/operation-not-allowed': 'Email and password sign-in is not enabled for this Firebase project. Contact MEDIVEU support.',
+    'auth/network-request-failed': 'No internet connection. Reconnect and try again.',
   };
   return map[err?.code] || String(err?.message || 'Something went wrong').replace('Firebase:', '').trim();
 }
@@ -271,25 +275,14 @@ function Register({ setTab, showToast }) {
       storeName: form.storeName.trim(),
       phone: form.phone.trim(),
       invitationCode: form.invitationCode.trim(),
+      referrerUid: new URLSearchParams(window.location.search).get('ref') || '',
     };
-    sessionStorage.setItem('mediveu-registration', JSON.stringify(registration));
+    sessionStore.setItem('mediveu-registration', JSON.stringify(registration));
     try {
       await createUserWithEmailAndPassword(auth, form.email.trim(), form.password);
-      const ensureStore = httpsCallable(functions, 'ensureStore');
-      await ensureStore({ invitationCode: registration.invitationCode, registration });
-      sessionStorage.removeItem('mediveu-registration');
-      const referrerUid = new URLSearchParams(window.location.search).get('ref');
-      if (referrerUid) {
-        try {
-          await httpsCallable(functions, 'attachReferral')({ referrerUid });
-          showToast('Account created with referral linked. Your 7-day trial has started.');
-        } catch {
-          showToast('Account created, but the referral link could not be verified. Contact support before subscribing.', 'error');
-        }
-      } else {
-        showToast('Account created. Your 7-day trial has started.');
-      }
+      showToast('Account created. Your store is being set up now.');
     } catch (err) {
+      sessionStore.removeItem('mediveu-registration');
       showToast(authError(err), 'error');
     } finally {
       setBusy(false);

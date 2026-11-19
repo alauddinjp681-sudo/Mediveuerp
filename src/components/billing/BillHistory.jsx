@@ -2,26 +2,28 @@ import React, { useEffect, useState } from 'react';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { storeDocument } from '../../lib/storeAccess';
 import { formatMoney, toMillis } from '../../lib/format';
+import { readableFirebaseError } from '../../lib/firebaseError';
 
 export default function BillHistory({ storeId, billId }) {
   const [open, setOpen] = useState(false);
   const [events, setEvents] = useState(null);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState('');
+  const [retryKey, setRetryKey] = useState(0);
   useEffect(() => {
-    if (!open || !storeId) return;
-    setError(false);
+    if (!open || !storeId) return undefined;
+    setError('');
     setEvents(null);
     return onSnapshot(
       collection(storeDocument(storeId, 'bills', billId), 'events'),
       (snapshot) =>
         setEvents(
           snapshot.docs
-            .map((d) => ({ ...d.data(), id: d.id }))
+            .map((document) => ({ ...document.data(), id: document.id }))
             .sort((a, b) => toMillis(b.changedAt) - toMillis(a.changedAt)),
         ),
-      () => setError(true),
+      (listenerError) => setError(readableFirebaseError(listenerError, 'Invoice history could not be loaded.')),
     );
-  }, [open, storeId, billId]);
+  }, [open, storeId, billId, retryKey]);
   return (
     <details
       className="card p-4 no-print"
@@ -51,15 +53,11 @@ export default function BillHistory({ storeId, billId }) {
           </li>
         ))}
       </ol>
-      {(!events?.length || error) && (
-        <p className="text-sm text-slate-400">
-          {error
-            ? 'History could not be loaded.'
-            : events
-              ? 'No recorded changes for this invoice.'
-              : 'Loading history…'}
-        </p>
-      )}
+      {error ? (
+        <p role="alert" className="text-sm text-red-300">{error} <button type="button" onClick={() => setRetryKey((key) => key + 1)} className="text-brand-sky underline">Retry</button></p>
+      ) : !events?.length ? (
+        <p role="status" className="text-sm text-slate-400">{events ? 'No recorded changes for this invoice.' : 'Loading history…'}</p>
+      ) : null}
     </details>
   );
 }

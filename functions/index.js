@@ -16,8 +16,20 @@ const plans = {
   yearly: { name: 'Yearly Plan (₹2799)', amount: 279900, days: 365 },
 };
 
+function razorpayCredentials() {
+  try {
+    const keyId = razorpayKeyId.value();
+    const keySecret = razorpayKeySecret.value();
+    if (keyId && keySecret) return { keyId, keySecret };
+  } catch (error) {
+    console.error('Razorpay secrets are unavailable to this function.', { code: error?.code });
+  }
+  throw new HttpsError('failed-precondition', 'Online payments are not configured. Contact MEDIVEU support before retrying checkout.');
+}
+
 function razorpayClient() {
-  return new Razorpay({ key_id: razorpayKeyId.value(), key_secret: razorpayKeySecret.value() });
+  const { keyId, keySecret } = razorpayCredentials();
+  return new Razorpay({ key_id: keyId, key_secret: keySecret });
 }
 
 function millis(value) {
@@ -104,13 +116,25 @@ exports.createSubscriptionOrder = onCall({ secrets: [razorpayKeyId, razorpayKeyS
     throw new HttpsError('permission-denied', 'Only the store owner can manage the subscription.');
   }
   const referrerUid = String(userSnap.get('referredBy') || '');
-  const order = await razorpayClient().orders.create({
-    amount: plan.amount,
-    currency: 'INR',
-    receipt: `mediveu_${request.auth.uid.slice(0, 12)}_${Date.now()}`,
-    notes: { userId: request.auth.uid, planId, referrerUid },
-  });
-  return { id: order.id, amount: order.amount, currency: order.currency, keyId: razorpayKeyId.value() };
+  const { keyId } = razorpayCredentials();
+  let order;
+  try {
+    order = await razorpayClient().orders.create({
+      amount: plan.amount,
+      currency: 'INR',
+      receipt: `mediveu_${request.auth.uid.slice(0, 12)}_${Date.now()}`,
+      notes: { userId: request.auth.uid, planId, referrerUid },
+    });
+  } catch (error) {
+    const statusCode = Number(error?.statusCode || error?.status || 0);
+    const networkFailure = /timeout|network|ECONN|socket/i.test(`${error?.code || ''} ${error?.message || ''}`);
+    console.error('Razorpay order creation failed.', { code: error?.code, statusCode });
+    if (statusCode === 429 || statusCode >= 500 || networkFailure) {
+      throw new HttpsError('unavailable', 'The payment provider is temporarily unavailable. Wait a moment and retry checkout.');
+    }
+    throw new HttpsError('failed-precondition', 'Secure checkout could not be started. Contact MEDIVEU support if this continues.');
+  }
+  return { id: order.id, amount: order.amount, currency: order.currency, keyId };
 });
 
 exports.confirmSubscriptionPayment = onCall({ secrets: [razorpayKeyId, razorpayKeySecret] }, async (request) => {
@@ -120,7 +144,8 @@ exports.confirmSubscriptionPayment = onCall({ secrets: [razorpayKeyId, razorpayK
     throw new HttpsError('invalid-argument', 'Payment confirmation details are incomplete.');
   }
 
-  const expectedSignature = crypto.createHmac('sha256', razorpayKeySecret.value()).update(`${orderId}|${paymentId}`).digest('hex');
+  const { keySecret } = razorpayCredentials();
+  const expectedSignature = crypto.createHmac('sha256', keySecret).update(`${orderId}|${paymentId}`).digest('hex');
   if (!safeEqualHex(signature, expectedSignature)) throw new HttpsError('permission-denied', 'The payment signature could not be verified.');
 
   const razorpay = razorpayClient();
@@ -129,8 +154,17 @@ exports.confirmSubscriptionPayment = onCall({ secrets: [razorpayKeyId, razorpayK
   try {
     [order, payment] = await Promise.all([razorpay.orders.fetch(orderId), razorpay.payments.fetch(paymentId)]);
     if (payment.status === 'authorized') payment = await razorpay.payments.capture(paymentId, payment.amount, payment.currency);
-  } catch {
-    throw new HttpsError('not-found', 'The payment could not be confirmed with Razorpay.');
+  } catch (error) {
+    const statusCode = Number(error?.statusCode || error?.status || 0);
+    const networkFailure = /timeout|network|ECONN|socket/i.test(`${error?.code || ''} ${error?.message || ''}`);
+    console.error('Razorpay payment lookup or capture failed.', { code: error?.code, statusCode });
+    if (statusCode === 404) {
+      throw new HttpsError('not-found', 'The payment was not found in Razorpay. Check the payment ID and contact support if you were charged.');
+    }
+    if (statusCode === 429 || statusCode >= 500 || networkFailure) {
+      throw new HttpsError('unavailable', 'Razorpay could not be reached to verify this payment. Do not pay again; check your plan status or contact support.');
+    }
+    throw new HttpsError('failed-precondition', 'Razorpay could not verify or capture this payment. Do not pay again; contact support to confirm its status.');
   }
   const uid = request.auth.uid;
   const planId = String(order.notes?.planId || '');

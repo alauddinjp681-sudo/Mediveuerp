@@ -10,15 +10,37 @@ import { getAuth } from 'firebase/auth';
 import { getFunctions } from 'firebase/functions';
 
 const env = import.meta.env;
+const firebaseEnvKeys = [
+  'VITE_FIREBASE_API_KEY',
+  'VITE_FIREBASE_AUTH_DOMAIN',
+  'VITE_FIREBASE_PROJECT_ID',
+  'VITE_FIREBASE_STORAGE_BUCKET',
+  'VITE_FIREBASE_MESSAGING_SENDER_ID',
+  'VITE_FIREBASE_APP_ID',
+];
+const configuredFirebaseKeys = firebaseEnvKeys.filter((key) => String(env[key] || '').trim());
+const missingFirebaseKeys = firebaseEnvKeys.filter((key) => !String(env[key] || '').trim());
+export const firebaseConfigError = configuredFirebaseKeys.length > 0 && missingFirebaseKeys.length > 0
+  ? `Firebase configuration is incomplete. Add all VITE_FIREBASE_* variables: ${missingFirebaseKeys.join(', ')}.`
+  : null;
 
-const firebaseConfig = {
-  apiKey: env.VITE_FIREBASE_API_KEY || 'AIzaSyDjmAHxhhEmIfpmMC-glskeSHNXuVXXlBU',
-  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || 'mediveuerp.firebaseapp.com',
-  projectId: env.VITE_FIREBASE_PROJECT_ID || 'mediveuerp',
-  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || 'mediveuerp.firebasestorage.app',
-  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || '203997741439',
-  appId: env.VITE_FIREBASE_APP_ID || '1:203997741439:web:a44659832e6a107d80da4a',
-};
+const firebaseConfig = configuredFirebaseKeys.length === firebaseEnvKeys.length
+  ? {
+      apiKey: env.VITE_FIREBASE_API_KEY.trim(),
+      authDomain: env.VITE_FIREBASE_AUTH_DOMAIN.trim(),
+      projectId: env.VITE_FIREBASE_PROJECT_ID.trim(),
+      storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET.trim(),
+      messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID.trim(),
+      appId: env.VITE_FIREBASE_APP_ID.trim(),
+    }
+  : {
+      apiKey: 'AIzaSyDjmAHxhhEmIfpmMC-glskeSHNXuVXXlBU',
+      authDomain: 'mediveuerp.firebaseapp.com',
+      projectId: 'mediveuerp',
+      storageBucket: 'mediveuerp.firebasestorage.app',
+      messagingSenderId: '203997741439',
+      appId: '1:203997741439:web:a44659832e6a107d80da4a',
+    };
 
 const app = initializeApp(firebaseConfig);
 
