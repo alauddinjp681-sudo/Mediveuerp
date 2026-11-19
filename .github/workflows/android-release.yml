@@ -26,73 +26,32 @@ permissions:
   contents: write
 
 jobs:
-  android-release:
+  build-android:
+    uses: ./.github/workflows/build-apk.yml
+    secrets: inherit
+
+  publish-release:
+    needs: build-android
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.publishRelease
     runs-on: ubuntu-latest
     steps:
-      - name: Check out source
-        uses: actions/checkout@v4
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
+      - name: Download signed APK and AAB
+        uses: actions/download-artifact@v4
         with:
-          node-version: 22
-
-      - name: Set up pnpm
-        run: corepack enable
-
-      - name: Install web dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-
-      - name: Build web app for Android
-        run: pnpm android:sync
-
-      - name: Prepare release signing key
-        env:
-          RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: |
-          if [ -z "$RELEASE_KEYSTORE_BASE64" ] || [ -z "$RELEASE_KEYSTORE_PASSWORD" ] || [ -z "$RELEASE_KEY_ALIAS" ] || [ -z "$RELEASE_KEY_PASSWORD" ]; then
-            echo "Configure the four Android signing secrets in GitHub repository settings before building a release."
-            exit 1
-          fi
-          echo "$RELEASE_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/mediveu-release.jks"
-          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/mediveu-release.jks" >> "$GITHUB_ENV"
-          echo "ANDROID_KEYSTORE_PASSWORD=$RELEASE_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
-          echo "ANDROID_KEY_ALIAS=$RELEASE_KEY_ALIAS" >> "$GITHUB_ENV"
-          echo "ANDROID_KEY_PASSWORD=$RELEASE_KEY_PASSWORD" >> "$GITHUB_ENV"
-
-      - name: Build signed APK and Play Store AAB
-        working-directory: android
-        run: ./gradlew --no-daemon assembleRelease bundleRelease
-
-      - name: Upload signed Android releases
-        uses: actions/upload-artifact@v4
-        with:
-          name: mediveu-android-release
-          path: |
-            android/app/build/outputs/apk/release/app-release.apk
-            android/app/build/outputs/bundle/release/app-release.aab
-          if-no-files-found: error
-          retention-days: 90
+          pattern: mediveu-release-*
+          merge-multiple: true
+          path: release
 
       - name: Publish APK and Play Store bundle
-        if: startsWith(github.ref, 'refs/tags/v') || inputs.publishRelease
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || inputs.releaseVersion }}
           name: MEDIVEU ERP ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || inputs.releaseVersion }}
           generate_release_notes: true
+          fail_on_unmatched_files: true
           files: |
-            android/app/build/outputs/apk/release/app-release.apk
-            android/app/build/outputs/bundle/release/app-release.aab
+            release/app-release.apk
+            release/app-release.aab
 
   deploy-firebase:
     if: ${{ inputs.deployFunctions }}
