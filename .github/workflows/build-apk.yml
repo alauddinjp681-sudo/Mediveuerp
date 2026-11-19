@@ -1,15 +1,4 @@
-# Builds a signed release APK and a signed Play Store AAB for the Capacitor Android app.
-#
-# Required GitHub repository secrets (Settings > Secrets and variables > Actions):
-#   ANDROID_KEYSTORE_BASE64    base64 of your .jks/.keystore file
-#                              (macOS/Linux: base64 -w0 release.jks, Windows: certutil -encode)
-#   ANDROID_KEYSTORE_PASSWORD  keystore (store) password
-#   ANDROID_KEY_ALIAS          alias of the signing key inside the keystore
-#   ANDROID_KEY_PASSWORD       password of that key (often the same as the store password)
-# Keep using the same release keystore and alias for every update; changing them can make
-# Play Store reject updates because the signing certificate no longer matches the app.
-
-name: Build signed Android releases
+name: Build Android debug APK
 
 on:
   push:
@@ -17,15 +6,6 @@ on:
       - main
   workflow_dispatch:
   workflow_call:
-    secrets:
-      ANDROID_KEYSTORE_BASE64:
-        required: false
-      ANDROID_KEYSTORE_PASSWORD:
-        required: false
-      ANDROID_KEY_ALIAS:
-        required: false
-      ANDROID_KEY_PASSWORD:
-        required: false
 
 permissions:
   contents: read
@@ -36,32 +16,11 @@ concurrency:
 
 jobs:
   build-android:
-    name: Build signed APK and Play Store bundle
+    name: Build debug APK
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
-    env:
-      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-
     steps:
-      - name: Check Android signing secrets
-        run: |
-          missing=()
-          [ -n "$ANDROID_KEYSTORE_BASE64" ] || missing+=("ANDROID_KEYSTORE_BASE64")
-          [ -n "$ANDROID_KEYSTORE_PASSWORD" ] || missing+=("ANDROID_KEYSTORE_PASSWORD")
-          [ -n "$ANDROID_KEY_ALIAS" ] || missing+=("ANDROID_KEY_ALIAS")
-          [ -n "$ANDROID_KEY_PASSWORD" ] || missing+=("ANDROID_KEY_PASSWORD")
-          if [ "${#missing[@]}" -gt 0 ]; then
-            for name in "${missing[@]}"; do
-              echo "::error title=Missing Android signing secret::$name is not set. Add it under Settings > Secrets and variables > Actions."
-            done
-            echo "Required secrets: ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD"
-            exit 1
-          fi
-
       - name: Check out source
         uses: actions/checkout@v4
 
@@ -97,93 +56,16 @@ jobs:
       - name: Set up Gradle with caching
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Decode and verify signing keystore
-        run: |
-          set -euo pipefail
-          umask 077
-          keystore_path="$RUNNER_TEMP/mediveu-release.jks"
-          if ! printf '%s' "$ANDROID_KEYSTORE_BASE64" | tr -d '\r\n ' | base64 --decode > "$keystore_path" || [ ! -s "$keystore_path" ]; then
-            echo "::error title=Invalid keystore::ANDROID_KEYSTORE_BASE64 is not valid base64 of a keystore file."
-            exit 1
-          fi
-          if ! keytool -list -keystore "$keystore_path" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" > /dev/null 2>&1; then
-            echo "::error title=Keystore check failed::Could not open the keystore with ANDROID_KEYSTORE_PASSWORD, or alias '$ANDROID_KEY_ALIAS' does not exist in it."
-            exit 1
-          fi
-          expected_fingerprint="$(keytool -list -v -keystore "$keystore_path" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" | awk -F'SHA256: ' '/SHA256: / { gsub(":", "", $2); print toupper($2); exit }')"
-          if [ -z "$expected_fingerprint" ]; then
-            echo "::error title=Keystore check failed::Could not read the SHA-256 signing certificate fingerprint for ANDROID_KEY_ALIAS."
-            exit 1
-          fi
-          echo "ANDROID_KEYSTORE_PATH=$keystore_path" >> "$GITHUB_ENV"
-          echo "ANDROID_RELEASE_CERT_SHA256=$expected_fingerprint" >> "$GITHUB_ENV"
-
-      - name: Build signed release APK and Play Store AAB
+      - name: Build debug APK
         working-directory: android
         run: |
-          set -Eeuo pipefail
           chmod +x gradlew
-          echo "Java runtime:"
-          java -version
-          echo "Android SDK: ${ANDROID_HOME:-${ANDROID_SDK_ROOT:-not set}}"
-          ./gradlew --version
-          ./gradlew --no-daemon --stacktrace --console=plain assembleRelease bundleRelease
+          ./gradlew assembleDebug
 
-      - name: Verify release artifacts and signatures
-        working-directory: android
-        run: |
-          set -Eeuo pipefail
-          apk="app/build/outputs/apk/release/app-release.apk"
-          aab="app/build/outputs/bundle/release/app-release.aab"
-          android_sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
-          if [ -z "$android_sdk" ]; then
-            echo "::error title=Android SDK missing::Neither ANDROID_HOME nor ANDROID_SDK_ROOT is set."
-            exit 1
-          fi
-          apksigner="$android_sdk/build-tools/36.0.0/apksigner"
-          for artifact in "$apk" "$aab"; do
-            if [ ! -s "$artifact" ]; then
-              echo "::error title=Missing release artifact::$artifact was not created or is empty."
-              exit 1
-            fi
-            ls -lh "$artifact"
-          done
-          if [ ! -x "$apksigner" ]; then
-            echo "::error title=Android SDK tool missing::Could not find apksigner at $apksigner. Check the Android SDK build-tools installation."
-            exit 1
-          fi
-          echo "Verifying APK signature and release certificate..."
-          apk_signer_output="$("$apksigner" verify --verbose --print-certs "$apk")"
-          printf '%s\n' "$apk_signer_output"
-          apk_fingerprint="$(printf '%s\n' "$apk_signer_output" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ { print toupper($2); exit }' | tr -d ':')"
-          if [ -z "$apk_fingerprint" ] || [ "$apk_fingerprint" != "$ANDROID_RELEASE_CERT_SHA256" ]; then
-            echo "::error title=APK signing certificate mismatch::The APK was not signed with the configured release keystore and alias."
-            exit 1
-          fi
-          echo "Verifying AAB signature and release certificate..."
-          jarsigner -verify "$aab"
-          aab_fingerprint="$(keytool -printcert -jarfile "$aab" | awk -F'SHA256: ' '/SHA256: / { gsub(":", "", $2); print toupper($2); exit }')"
-          if [ -z "$aab_fingerprint" ] || [ "$aab_fingerprint" != "$ANDROID_RELEASE_CERT_SHA256" ]; then
-            echo "::error title=AAB signing certificate mismatch::The AAB was not signed with the configured release keystore and alias."
-            exit 1
-          fi
-
-      - name: Upload signed release APK
+      - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: mediveu-release-apk
-          path: android/app/build/outputs/apk/release/app-release.apk
+          name: mediveu-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
-
-      - name: Upload signed Play Store AAB
-        uses: actions/upload-artifact@v4
-        with:
-          name: mediveu-release-aab
-          path: android/app/build/outputs/bundle/release/app-release.aab
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Remove temporary signing keystore
-        if: always()
-        run: rm -f "$RUNNER_TEMP/mediveu-release.jks"
