@@ -4,7 +4,8 @@ def releaseStorePath = System.getenv('ANDROID_KEYSTORE_PATH')
 def releaseStorePassword = System.getenv('ANDROID_KEYSTORE_PASSWORD')
 def releaseKeyAlias = System.getenv('ANDROID_KEY_ALIAS')
 def releaseKeyPassword = System.getenv('ANDROID_KEY_PASSWORD')
-def hasReleaseSigning = releaseStorePath && releaseStorePassword && releaseKeyAlias && releaseKeyPassword
+def isConfigured = { value -> value != null && !value.trim().isEmpty() }
+def hasReleaseSigning = [releaseStorePath, releaseStorePassword, releaseKeyAlias, releaseKeyPassword].every(isConfigured)
 
 gradle.taskGraph.whenReady { graph ->
     def buildsRelease = graph.allTasks.any { it.name ==~ /(assemble|bundle|package|sign)Release.*/ }

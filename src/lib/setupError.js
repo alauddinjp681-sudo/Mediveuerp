@@ -50,12 +50,15 @@ export function describeSetupError(error) {
     details.reason && `reason: ${details.reason}`,
   ].filter(Boolean).join(' · ');
 
+  const reason = String(details.reason || '').trim();
+  const readableReason = reason && reason !== serverMessage ? `${serverMessage && !GENERIC_MESSAGES.has(serverMessage) ? `${serverMessage} ` : ''}Reason: ${reason}` : '';
+
   return {
     code,
     title: offline ? 'You are offline' : help.title,
     message: offline
       ? 'Reconnect to the internet, then press Retry setup. Nothing was changed.'
-      : GENERIC_MESSAGES.has(serverMessage) ? help.message : serverMessage,
+      : readableReason || (GENERIC_MESSAGES.has(serverMessage) || !serverMessage ? help.message : serverMessage),
     technical,
     retryable: offline || (typeof details.retryable === 'boolean' ? details.retryable : RETRYABLE.has(code)),
     autoRetry: code === 'unavailable' || code === 'deadline-exceeded' || code === 'aborted',
