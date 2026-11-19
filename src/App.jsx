@@ -81,6 +81,7 @@ export default function App() {
     const onErr = (label) => (error) => console.error(`Listener ${label} failed`, error);
 
     const bootstrap = async () => {
+      setMembership(null);
       setStoreSetupError('');
       try {
         let registration = {};
@@ -100,7 +101,12 @@ export default function App() {
         const storeId = context.storeId;
 
         unsubs.push(onSnapshot(doc(db, 'users', user.uid), (snapshot) => setUserDoc(snapshot.exists() ? snapshot.data() : {}), onErr('account')));
-        unsubs.push(onSnapshot(storeDocument(storeId, 'members', user.uid), (snapshot) => setMembership(snapshot.exists() ? snapshot.data() : null), onErr('membership')));
+        unsubs.push(onSnapshot(storeDocument(storeId, 'members', user.uid), (snapshot) => {
+          if (!active) return;
+          const member = snapshot.data();
+          if (member?.status === 'active' && ['owner','manager','worker','accountant'].includes(member.role)) setMembership(member);
+          else { setMembership(null); setStoreSetupError('Your store membership is not active. Contact the store owner.'); }
+        }, () => { if (active) { setMembership(null); setStoreSetupError('Your store access could not be verified.'); } }));
         unsubs.push(onSnapshot(doc(db, 'stores', storeId), (snapshot) => setStoreData(snapshot.exists() ? snapshot.data() : null), onErr('store')));
         unsubs.push(onSnapshot(storeCollection(storeId, 'settings'), (snapshot) => {
           const next = {};
@@ -153,7 +159,7 @@ export default function App() {
       ...(userDoc || {}),
       ...(storeData || {}),
       storeId: userDoc?.storeId,
-      role: membership?.role || userDoc?.role || 'worker',
+      role: membership?.role,
       email: userDoc?.email || user?.email,
       plan: storeData?.plan || userDoc?.plan || '7 Days Free Trial',
       status: storeData?.status || userDoc?.status || 'Active',
@@ -170,7 +176,7 @@ export default function App() {
   let content;
   if (view === 'admin') {
     content = isAdminAuth ? <AdminPanel navigate={navigate} /> : <AdminLogin onLogin={handleAdminLogin} navigate={navigate} />;
-  } else if (!authReady || (user && view === 'tenant' && userDoc === null && !storeSetupError)) {
+  } else if (!authReady || (user && view === 'tenant' && (!userDoc || !membership) && !storeSetupError)) {
     content = <FullScreenLoader />;
   } else if (view === 'tenant' && user && storeSetupError) {
     content = (

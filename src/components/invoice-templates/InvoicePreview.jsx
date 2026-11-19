@@ -28,7 +28,7 @@ const InvoicePreview = forwardRef(function InvoicePreview({ doc, templateId }, p
 
   return (
     <div ref={wrapRef} className="w-full flex justify-center overflow-hidden" style={{ height: height || undefined }}>
-      <div style={{ width, transform: `scale(${scale})`, transformOrigin: 'top center' }}>
+      <div style={{ width, flexShrink: 0, transform: `scale(${scale})`, transformOrigin: 'top center' }}>
         <div id="invoice-print" ref={paperRef} className="shadow-2xl">
           <Component doc={doc} />
         </div>

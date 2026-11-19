@@ -54,6 +54,7 @@ export default function Dashboard({ userData, data, go }) {
     let today = 0; let month = 0; let total = 0;
     const days = Array.from({ length: 7 }, (_, i) => ({ t: t0 - (6 - i) * DAY, v: 0 }));
     bills.forEach((b) => {
+      if (b.status === 'draft' || ['estimate', 'proforma'].includes(b.invoiceDetails?.docType)) return;
       const amt = toNumber(b.totals?.grandTotal);
       const ts = toMillis(b.createdAt) || toMillis(b.invoiceDetails?.date);
       total += amt;
@@ -82,10 +83,10 @@ export default function Dashboard({ userData, data, go }) {
           <p className="text-sm text-slate-400">Welcome back</p>
           <h1 className="text-2xl md:text-3xl font-extrabold text-white text-balance">{storeName || 'Your Store'}</h1>
         </div>
-        <Button onClick={() => go('billing')}><Plus size={16} /> New Bill</Button>
+        <Button onClick={() => go('billing')}>{userData.role === 'accountant' ? <><FileText size={16} /> View invoices</> : <><Plus size={16} /> New Bill</>}</Button>
       </div>
 
-      <PlanBanner userData={userData} go={go} />
+      {userData.role === 'owner' && <PlanBanner userData={userData} go={go} />}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         <Stat icon={IndianRupee} label="Today" value={formatMoney(stats.today)} sub={`Month ${formatMoney(stats.month)}`} tone="bg-brand-green/15 text-brand-green" />
@@ -114,7 +115,7 @@ export default function Dashboard({ userData, data, go }) {
         <Card className="p-5">
           <div className="flex items-center justify-between mb-3">
             <h2 className="font-bold text-white">Stock alerts</h2>
-            <button onClick={() => go('inventory')} className="text-xs text-brand-sky hover:underline">View stock</button>
+            {userData.role !== 'accountant' && <button onClick={() => go('inventory')} className="text-xs text-brand-sky hover:underline">View stock</button>}
           </div>
           <ul className="space-y-2 max-h-48 overflow-y-auto">
             {stats.expiring.slice(0, 5).map((i) => (
@@ -137,14 +138,14 @@ export default function Dashboard({ userData, data, go }) {
       <Card className="overflow-hidden">
         <div className="flex items-center justify-between p-5 pb-3">
           <h2 className="font-bold text-white">Recent invoices</h2>
-          <button onClick={() => go('reports')} className="text-xs text-brand-sky hover:underline">All reports</button>
+          {userData.role !== 'worker' && <button onClick={() => go('reports')} className="text-xs text-brand-sky hover:underline">All reports</button>}
         </div>
         <ul className="divide-y divide-white/5">
           {stats.recent.map((b) => (
             <li key={b.id} className="flex items-center justify-between gap-3 px-5 py-3">
               <div className="min-w-0">
                 <div className="text-sm font-semibold text-white truncate">{b.buyerDetails?.name || 'Cash Customer'}</div>
-                <div className="text-xs text-slate-500">{b.invoiceDetails?.invoiceNumber} · {formatDate(b.createdAt || b.invoiceDetails?.date)}</div>
+                <button onClick={() => go('billing', b)} className="text-sm text-brand-sky hover:underline">{b.invoiceDetails?.invoiceNumber || 'Open invoice'} · {b.status === 'draft' ? 'Draft' : formatDate(b.createdAt || b.invoiceDetails?.date)}</button>
               </div>
               <span className="text-sm font-bold text-white tabular">{formatMoney(b.totals?.grandTotal)}</span>
             </li>

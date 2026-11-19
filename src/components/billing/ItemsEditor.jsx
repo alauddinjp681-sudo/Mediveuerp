@@ -4,7 +4,7 @@ import { calcLine, emptyItem } from '../../lib/invoice';
 import { formatINR, toNumber } from '../../lib/format';
 import { isComposing } from '../ui';
 
-const fromInventory = (inv) => ({
+export const fromInventory = (inv) => ({
   ...emptyItem(),
   inventoryId: inv.id,
   description: inv.name || '',
@@ -63,16 +63,17 @@ function ProductSearch({ inventory, onPick }) {
         className="field pl-10 pr-10 py-3"
         autoComplete="off"
         role="combobox"
-        aria-expanded={results.length > 0}
+        aria-expanded={Boolean(term)}
+        aria-activedescendant={results[active] ? `result-${results[active].id}` : undefined}
         aria-controls="product-results"
       />
       <ScanBarcode size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500" aria-hidden="true" />
       {term && (
         <ul id="product-results" role="listbox" className="absolute z-30 mt-1 w-full card p-1 shadow-2xl max-h-80 overflow-y-auto bg-ink-850">
           {results.map((inv, idx) => (
-            <li key={inv.id} role="option" aria-selected={idx === active}>
+            <li key={inv.id} id={`result-${inv.id}`} role="option" aria-selected={idx === active}>
               <button
-                onMouseDown={(e) => { e.preventDefault(); pick(inv); }}
+                onClick={() => pick(inv)}
                 className={`w-full text-left px-3 py-2 rounded-lg flex items-center justify-between gap-3 ${idx === active ? 'bg-white/10' : 'hover:bg-white/5'}`}
               >
                 <span className="min-w-0">
@@ -89,7 +90,7 @@ function ProductSearch({ inventory, onPick }) {
             </li>
           ))}
           <li>
-            <button onMouseDown={(e) => { e.preventDefault(); pick(null); }} className="w-full text-left px-3 py-2 rounded-lg text-sm text-brand-sky hover:bg-white/5">
+            <button onClick={() => pick(null)} className="w-full text-left px-3 py-2 rounded-lg text-sm text-brand-sky hover:bg-white/5">
               + Add &quot;{term.trim().toUpperCase()}&quot; as new line
             </button>
           </li>
@@ -125,15 +126,15 @@ function ItemRow({ item, index, onChange, onRemove }) {
         <div className="flex-1 min-w-0">
           <label className="sr-only" htmlFor={`desc-${item.id}`}>Item description</label>
           <input id={`desc-${item.id}`} value={item.description} onChange={set('description')} placeholder="Item / medicine name" className={`${small} font-semibold`} />
-          <div className="grid grid-cols-4 gap-2 mt-2">
+          <details className="mt-2"><summary className="cursor-pointer text-sm text-slate-400">Batch, expiry & MRP</summary><div className="grid grid-cols-2 gap-2 mt-2">
             {TEXT_FIELDS.map((f) => (
               <div key={f.key}>
                 <label htmlFor={`${f.key}-${item.id}`} className="text-[10px] uppercase text-slate-500">{f.label}</label>
                 <input id={`${f.key}-${item.id}`} type={f.type || 'text'} inputMode={f.type === 'number' ? 'decimal' : undefined} value={item[f.key]} onChange={set(f.key)} placeholder={f.placeholder} className={small} />
               </div>
             ))}
-          </div>
-          <div className="grid grid-cols-5 gap-2 mt-2">
+          </div></details>
+          <div className="grid grid-cols-2 md:grid-cols-3 2xl:grid-cols-5 gap-2 mt-2">
             {NUM_FIELDS.map((f) => (
               <div key={f.key}>
                 <label htmlFor={`${f.key}-${item.id}`} className="text-[10px] uppercase text-slate-500">{f.label}</label>
