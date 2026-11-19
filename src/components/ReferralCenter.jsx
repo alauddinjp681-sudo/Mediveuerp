@@ -1,10 +1,13 @@
 import React from 'react';
 import useSWR from 'swr';
 import { Check, Copy, Gift, Share2, ShieldCheck } from 'lucide-react';
+import { auth } from '../firebase';
 import { Button, Card, PageHeader } from './ui';
 
-async function fetchReferralDashboard(user) {
-  const token = await user.getIdToken();
+async function fetchReferralDashboard() {
+  const authUser = auth.currentUser;
+  if (!authUser) throw new Error('Your login session has expired. Please log in again to view referral rewards.');
+  const token = await authUser.getIdToken();
   const response = await fetch('/api/referral-dashboard', { headers: { Authorization: `Bearer ${token}` } });
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || 'Could not load referral rewards.');
@@ -12,7 +15,7 @@ async function fetchReferralDashboard(user) {
 }
 
 export default function ReferralCenter({ user, userData, showToast }) {
-  const { data, error, isLoading } = useSWR(user?.uid ? ['referral-dashboard', user.uid] : null, () => fetchReferralDashboard(user));
+  const { data, error, isLoading } = useSWR(user?.uid ? ['referral-dashboard', user.uid] : null, fetchReferralDashboard);
   const referralCode = user?.uid ? `MEDI-${user.uid}` : '';
   const referralUrl = typeof window !== 'undefined' ? `${window.location.origin}/?ref=${encodeURIComponent(referralCode)}` : '';
   const verified = Number(data?.verified || 0);
