@@ -15,7 +15,8 @@ export default function ReferralCenter({ user, userData, showToast }) {
   const { data, error, isLoading } = useSWR(user?.uid ? ['referral-dashboard', user.uid] : null, () => fetchReferralDashboard(user));
   const referralCode = user?.uid ? `MEDI-${user.uid}` : '';
   const referralUrl = typeof window !== 'undefined' ? `${window.location.origin}/?ref=${encodeURIComponent(referralCode)}` : '';
-  const verified = data?.verified || 0;
+  const verified = Number(data?.verified || 0);
+  const progressCount = verified > 0 ? ((verified - 1) % 3) + 1 : 0;
   const rewardDaysEarned = (data?.rewardMonthsEarned || 0) * 30;
 
   const copy = async (value, message) => {
@@ -41,7 +42,7 @@ export default function ReferralCenter({ user, userData, showToast }) {
 
   return (
     <div className="max-w-5xl mx-auto space-y-5">
-      <PageHeader title="Referral rewards" subtitle="Invite store owners and earn subscription time after their qualifying payment." icon={<Gift size={20} />} />
+      <PageHeader title="Referral rewards" subtitle="Invite store owners and earn subscription time after their verified paid plan purchase." icon={<Gift size={20} />} />
       {userData?.role !== 'owner' ? (
         <Card role="status" className="p-5 text-sm text-slate-300">Referral rewards are available to store owners.</Card>
       ) : (
@@ -51,7 +52,7 @@ export default function ReferralCenter({ user, userData, showToast }) {
               <div>
                 <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">Your unique referral code</div>
                 <p className="mt-2 break-all font-mono text-xl font-bold tracking-wide text-white" aria-label={`Referral code ${referralCode}`}>{referralCode}</p>
-                <p className="mt-2 text-sm text-slate-400">Share this code. The new owner enters it at checkout; the referral counts after a verified monthly payment.</p>
+                <p className="mt-2 text-sm text-slate-400">Share this code. The new owner enters it at checkout; each referred store counts after its first verified paid plan purchase.</p>
               </div>
               <div className="flex gap-2 shrink-0">
                 <Button variant="secondary" onClick={() => copy(referralCode, 'Referral code copied.')} aria-label="Copy referral code"><Copy size={16} /> Copy code</Button>
@@ -62,9 +63,24 @@ export default function ReferralCenter({ user, userData, showToast }) {
           {error && <Card role="alert" className="border-red-500/30 p-4 text-sm text-red-200">{error.message}</Card>}
           <div className="grid gap-3 sm:grid-cols-3">
             <Card className="p-5"><p className="text-sm text-slate-400">Total referrals</p><p className="mt-2 text-3xl font-bold text-white">{isLoading ? '—' : data?.total || 0}</p></Card>
-            <Card className="p-5"><p className="text-sm text-slate-400">Verified rewards</p><p className="mt-2 text-3xl font-bold text-white">{isLoading ? '—' : verified}</p><p className="mt-1 text-xs text-slate-500">Qualified monthly payments</p></Card>
+            <Card className="p-5"><p className="text-sm text-slate-400">Verified rewards</p><p className="mt-2 text-3xl font-bold text-white">{isLoading ? '—' : verified}</p><p className="mt-1 text-xs text-slate-500">Verified paid plan purchases</p></Card>
             <Card className="p-5"><p className="text-sm text-slate-400">Subscription time earned</p><p className="mt-2 text-3xl font-bold text-white">{isLoading ? '—' : `${rewardDaysEarned} days`}</p><p className="mt-1 text-xs text-slate-500">{data?.rewardMonthsApplied || 0} months applied to your account</p></Card>
           </div>
+          <Card className="p-5 sm:p-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="font-bold text-white">Progress to your next free month</h2>
+                <p className="mt-1 text-sm text-slate-300">
+                  {isLoading ? '—' : `${progressCount} / 3 paid referrals towards 1 Month Free Subscription`}
+                </p>
+              </div>
+              <span className="inline-flex w-fit items-center rounded-full bg-brand-green/10 px-3 py-1 text-sm font-semibold text-brand-green">+30 days</span>
+            </div>
+            <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-white/10" role="progressbar" aria-label="Paid referrals toward one free month" aria-valuemin={0} aria-valuemax={3} aria-valuenow={isLoading ? 0 : progressCount}>
+              <div className="h-full rounded-full bg-brand-green transition-[width] duration-500" style={{ width: `${isLoading ? 0 : (progressCount / 3) * 100}%` }} />
+            </div>
+            <p className="mt-3 text-xs text-slate-400">Every 3 verified paid plan purchases using your code automatically adds 30 days to your store subscription.</p>
+          </Card>
           <Card className="p-5 sm:p-6">
             <div className="flex items-center gap-2"><ShieldCheck size={18} className="text-brand-green" /><h2 className="font-bold text-white">Referral activity</h2></div>
             {isLoading ? <p className="mt-4 text-sm text-slate-400" role="status">Loading referral activity…</p> : data?.referrals?.length ? (
