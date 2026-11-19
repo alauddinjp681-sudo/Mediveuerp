@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ArrowRight, Check, Crown, ShieldCheck, Sparkles } from 'lucide-react';
-import { Button, Card, PageHeader } from './ui';
+import { Button, Card, Field, PageHeader } from './ui';
 
 const PLAN_CARDS = [
   { id: 'trial', name: 'Starter', price: 0, display: '₹0', period: '7 days', text: 'Explore the full MEDIVEU workflow before upgrading.', features: ['All core ERP features', 'Offline-ready billing', 'No card required'], featured: false },
@@ -8,7 +8,22 @@ const PLAN_CARDS = [
   { id: 'yearly', name: 'Yearly', price: 2799, display: '₹2,799', period: 'year', text: 'Best value for stores using MEDIVEU all year.', features: ['Everything in Monthly', 'One annual payment', 'Priority support'], featured: false },
 ];
 
+function loadRazorpay() {
+  if (window.Razorpay) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.async = true;
+    script.onload = resolve;
+    script.onerror = () => reject(new Error('Secure checkout could not be loaded. Check your connection and retry.'));
+    document.head.appendChild(script);
+  });
+}
+
 export default function SubscriptionPlans({ user, userData, showToast, navigate }) {
+  const [referralCode, setReferralCode] = useState(() => new URLSearchParams(window.location.search).get('ref') || '');
+  const [checkoutPlan, setCheckoutPlan] = useState('');
+
   const startTrial = () => {
     if (!user) {
       showToast('Please sign in before opening your store.', 'error');
@@ -19,9 +34,68 @@ export default function SubscriptionPlans({ user, userData, showToast, navigate 
     navigate?.('app', 'pos');
   };
 
+  const startCheckout = async (planId) => {
+    if (!user) {
+      showToast('Please sign in before upgrading.', 'error');
+      navigate?.('public', 'login');
+      return;
+    }
+    setCheckoutPlan(planId);
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch('/api/create-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ planId, referralCode: referralCode.trim() || undefined }),
+      });
+      const order = await response.json();
+      if (!response.ok) throw new Error(order.error || 'Could not start checkout.');
+      await loadRazorpay();
+      const checkout = new window.Razorpay({
+        key: order.keyId,
+        amount: order.amount,
+        currency: order.currency,
+        name: 'MEDIVEU ERP',
+        description: planId === 'monthly' ? 'Monthly subscription' : 'Yearly subscription',
+        order_id: order.id,
+        prefill: { email: user.email || '' },
+        theme: { color: '#38bdf8' },
+        handler: async (payment) => {
+          try {
+            const verifyToken = await user.getIdToken();
+            const verifyResponse = await fetch('/api/verify-payment', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${verifyToken}` },
+              body: JSON.stringify(payment),
+            });
+            const result = await verifyResponse.json();
+            if (!verifyResponse.ok) throw new Error(result.error || 'Payment verification failed.');
+            showToast(result.referralRewardDays ? `Payment verified. Your referrer earned ${result.referralRewardDays} reward days.` : 'Payment verified. Your subscription is active.');
+            setReferralCode('');
+          } catch (error) {
+            showToast(error.message || 'Payment was received but could not be verified. Do not pay again; contact support.', 'error');
+          } finally {
+            setCheckoutPlan('');
+          }
+        },
+        modal: { ondismiss: () => setCheckoutPlan('') },
+      });
+      checkout.on('payment.failed', (event) => {
+        showToast(event.error?.description || 'Payment was not completed.', 'error');
+        setCheckoutPlan('');
+      });
+      checkout.open();
+    } catch (error) {
+      showToast(error.message || 'Could not start secure checkout.', 'error');
+      setCheckoutPlan('');
+    }
+  };
+
+  const isOwner = userData?.role === 'owner';
   return (
     <div className="max-w-6xl mx-auto py-4 sm:py-8">
-      <PageHeader title="Choose the right plan" subtitle="Your free trial is activated when your account is created. Paid plan changes are temporarily unavailable in client-only mode." icon={<Crown size={20} />} />
+      <PageHeader title="Choose the right plan" subtitle="Secure, verified subscriptions for your store." icon={<Crown size={20} />} />
+      {isOwner && <div className="max-w-xl mb-5"><Field label="Referral code (optional)" id="subscription-referral-code" value={referralCode} onChange={(event) => setReferralCode(event.target.value)} placeholder="MEDI-…" autoComplete="off" /></div>}
       <div className="grid md:grid-cols-3 gap-4 lg:gap-6 items-stretch">
         {PLAN_CARDS.map((plan) => (
           <Card key={plan.id} className={`relative p-5 sm:p-6 flex flex-col ${plan.featured ? 'border-brand-sky/40 shadow-glow bg-gradient-to-b from-sky-500/[0.08] to-ink-900' : ''}`}>
@@ -32,13 +106,13 @@ export default function SubscriptionPlans({ user, userData, showToast, navigate 
             <ul className="mt-6 space-y-3 flex-1">
               {plan.features.map((feature) => <li key={feature} className="flex items-start gap-2 text-sm text-slate-300"><Check size={16} className="text-brand-green mt-0.5 shrink-0" /> {feature}</li>)}
             </ul>
-            <Button variant={plan.featured ? 'primary' : 'secondary'} className="w-full mt-7" onClick={plan.id === 'trial' ? startTrial : undefined} disabled={plan.id !== 'trial'}>
-              {plan.id === 'trial' ? 'Continue free trial' : 'Paid plans unavailable'} <ArrowRight size={16} />
+            <Button variant={plan.featured ? 'primary' : 'secondary'} className="w-full mt-7" onClick={plan.id === 'trial' ? startTrial : () => startCheckout(plan.id)} disabled={Boolean(checkoutPlan)}>
+              {plan.id === 'trial' ? 'Continue free trial' : checkoutPlan === plan.id ? 'Opening secure checkout…' : `Upgrade to ${plan.name}`} <ArrowRight size={16} />
             </Button>
           </Card>
         ))}
       </div>
-      <div role="note" className="mt-5 rounded-xl border border-white/[0.07] bg-white/[0.02] p-4 flex items-start gap-3 text-xs text-slate-400"><ShieldCheck size={17} className="text-brand-green shrink-0" /><p>Payment orders and subscription changes require a trusted server for verification. No payment will be taken or plan changed from this client-only app. Contact support for paid plan availability.</p></div>
+      <div role="note" className="mt-5 rounded-xl border border-white/[0.07] bg-white/[0.02] p-4 flex items-start gap-3 text-xs text-slate-400"><ShieldCheck size={17} className="text-brand-green shrink-0" /><p>Payments are verified server-side before any plan change. Referral rewards are recorded only after a qualifying payment is verified.</p></div>
       {userData?.subscriptionEndsAt && <p className="mt-3 text-center text-xs text-slate-500">Current plan: {userData.plan}. Expiry is {new Date(userData.subscriptionEndsAt?.toMillis?.() || userData.subscriptionEndsAt).toLocaleDateString('en-IN')}.</p>}
     </div>
   );

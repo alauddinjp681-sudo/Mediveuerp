@@ -16,8 +16,8 @@ const FEATURES = [
 
 const PLANS = [
   { name: 'Free Trial', price: '0', period: '7 days', text: 'All features, no card required.', cta: 'Start Free Trial' },
-  { name: 'Monthly', price: '249', period: 'month', text: 'Paid plan activation is temporarily unavailable.', cta: 'Contact support', featured: true },
-  { name: 'Yearly', price: '2,799', period: 'year', text: 'Paid plan activation is temporarily unavailable.', cta: 'Contact support' },
+  { name: 'Monthly', price: '249', period: 'month', text: 'Secure checkout available after sign-in.', cta: 'Sign in to upgrade', featured: true },
+  { name: 'Yearly', price: '2,799', period: 'year', text: 'Secure checkout available after sign-in.', cta: 'Sign in to upgrade' },
 ];
 
 const TABS = ['home', 'features', 'pricing', 'contact'];
@@ -155,11 +155,11 @@ function Pricing({ setTab }) {
             <h3 className="font-bold text-white text-lg">{p.name}</h3>
             <div className="mt-3 text-4xl font-extrabold text-white">₹{p.price}<span className="text-sm font-medium text-slate-400"> / {p.period}</span></div>
             <p className="text-sm text-slate-400 mt-2 flex-1">{p.text}</p>
-            <Button variant={p.featured ? 'primary' : 'secondary'} className="mt-6 w-full" onClick={() => setTab(p.name === 'Free Trial' ? 'register' : 'contact')}>{p.cta}</Button>
+            <Button variant={p.featured ? 'primary' : 'secondary'} className="mt-6 w-full" onClick={() => setTab(p.name === 'Free Trial' ? 'register' : 'login')}>{p.cta}</Button>
           </Card>
         ))}
       </div>
-      <p className="mt-5 text-center text-xs text-slate-500">Paid checkout is not available in this client-only app. Contact support for plan availability; no payment is taken here.</p>
+      <p className="mt-5 text-center text-xs text-slate-500">Payments are verified securely before a subscription is activated. Sign in to manage or upgrade your store plan.</p>
     </section>
   );
 }

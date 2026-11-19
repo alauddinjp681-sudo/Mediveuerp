@@ -98,7 +98,7 @@ export default function TenantApp({ user, userData, path, setPath, navigate, sho
       case 'purchaseEntry': return <PurchaseEntry user={user} preSelectedSupplier={activeSupplier} onNavigate={go} showToast={showToast} canEdit={canManageStore(role)} />;
       case 'reports': return <Reports data={{ ...data, medicines: data.inventory }} role={role} onOpenBill={(bill) => go('billing', bill)} />;
       case 'plans': return <SubscriptionPlans user={user} userData={userData} showToast={showToast} navigate={(v, p) => (v === 'public' ? navigate(v, p) : go(p === 'pos' ? 'billing' : p || 'dashboard'))} />;
-      case 'referrals': return <ReferralCenter user={user} showToast={showToast} />;
+      case 'referrals': return <ReferralCenter user={user} userData={userData} showToast={showToast} />;
       case 'team': return <TeamAccess user={user} showToast={showToast} />;
       case 'settings': return <SettingsView user={user} userData={userData} data={data} showToast={showToast} />;
       default: return <Dashboard userData={userData} data={data} go={go} />;
