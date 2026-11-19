@@ -4,7 +4,6 @@ import { Download, Upload, Save } from 'lucide-react';
 import { db } from '../firebase';
 import { Button, Card, Field, PageHeader } from './ui';
 import { TEMPLATES } from './invoice-templates';
-import TeamAccess from './TeamAccess';
 import { storeCollection, storeDocument } from '../lib/storeAccess';
 import { readableFirebaseError } from '../lib/firebaseError';
 
@@ -136,7 +135,6 @@ export default function SettingsView({ user, userData, data, showToast }) {
         </div>
       </Card>
 
-      {userData?.role === 'owner' && <TeamAccess user={user} showToast={showToast} />}
     </form>
   );
 }

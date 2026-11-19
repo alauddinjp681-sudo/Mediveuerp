@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useEffect, useState } from 'react';
-import { Home, Receipt, Package, Users, Truck, BarChart3, Crown, Settings, LogOut, Menu, X, Wifi, WifiOff, ShoppingCart, MoreHorizontal, Gift } from 'lucide-react';
+import { Home, Receipt, Package, Users, Truck, BarChart3, Crown, Settings, LogOut, Menu, X, Wifi, WifiOff, ShoppingCart, MoreHorizontal, Gift, Monitor, Smartphone } from 'lucide-react';
 import { BrandMark, Spinner, cn } from '../ui';
 import { useSubscriptionTimer } from '../../lib/plan';
 import { canAccessView, canEditInventory, canManageBills, canManageStore, ROLE_LABELS } from '../../lib/storeAccess';
@@ -15,6 +15,7 @@ const Reports = lazy(() => import('../Reports'));
 const SubscriptionPlans = lazy(() => import('../SubscriptionPlans'));
 const SettingsView = lazy(() => import('../SettingsView'));
 const ReferralCenter = lazy(() => import('../ReferralCenter'));
+const TeamAccess = lazy(() => import('../TeamAccess'));
 
 const NAV = [
   { id: 'dashboard', label: 'Dashboard', icon: Home },
@@ -24,11 +25,13 @@ const NAV = [
   { id: 'suppliers', label: 'Suppliers', icon: Truck },
   { id: 'purchaseEntry', label: 'Purchase Entry', icon: ShoppingCart },
   { id: 'reports', label: 'Reports', icon: BarChart3 },
+  { id: 'team', label: 'Staff / Team Management', icon: Users },
   { id: 'plans', label: 'Upgrade Plan', icon: Crown },
   { id: 'referrals', label: 'Referral rewards', icon: Gift },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 const BOTTOM = ['dashboard', 'billing', 'inventory', 'reports'];
+const WORKER_BOTTOM = ['dashboard', 'billing', 'inventory', 'customers'];
 
 function useOnline() {
   const [online, setOnline] = useState(() => navigator.onLine);
@@ -60,14 +63,15 @@ function NavList({ path, go, onLogout, role }) {
   );
 }
 
-export default function TenantApp({ user, userData, path, setPath, navigate, showToast, onLogout, data }) {
+export default function TenantApp({ user, userData, path, setPath, navigate, showToast, onLogout, data, showViewToggle, siteView, onSwitchSiteView, onHideViewToggle, onShowViewToggle }) {
   const [drawer, setDrawer] = useState(false);
   const [editBill, setEditBill] = useState(null);
   const [activeSupplier, setActiveSupplier] = useState(null);
   const online = useOnline();
   const role = user?.role || 'worker';
-  const visibleBottom = BOTTOM.filter((id) => canAccessView(role, id));
+  const visibleBottom = (role === 'worker' ? WORKER_BOTTOM : BOTTOM).filter((id) => canAccessView(role, id));
   const { plan, timeLeft, isUrgent } = useSubscriptionTimer(userData);
+  const ViewIcon = siteView === 'mobile' ? Monitor : Smartphone;
 
   useEffect(() => {
     if (!canAccessView(role, path)) setPath('dashboard');
@@ -94,7 +98,8 @@ export default function TenantApp({ user, userData, path, setPath, navigate, sho
       case 'purchaseEntry': return <PurchaseEntry user={user} preSelectedSupplier={activeSupplier} onNavigate={go} showToast={showToast} canEdit={canManageStore(role)} />;
       case 'reports': return <Reports data={{ ...data, medicines: data.inventory }} role={role} onOpenBill={(bill) => go('billing', bill)} />;
       case 'plans': return <SubscriptionPlans user={user} userData={userData} showToast={showToast} navigate={(v, p) => (v === 'public' ? navigate(v, p) : go(p === 'pos' ? 'billing' : p || 'dashboard'))} />;
-      case 'referrals': return <ReferralCenter user={user} showToast={showToast} />;
+      case 'referrals': return <ReferralCenter user={user} userData={userData} showToast={showToast} />;
+      case 'team': return <TeamAccess user={user} showToast={showToast} />;
       case 'settings': return <SettingsView user={user} userData={userData} data={data} showToast={showToast} />;
       default: return <Dashboard userData={userData} data={data} go={go} />;
     }
@@ -108,7 +113,8 @@ export default function TenantApp({ user, userData, path, setPath, navigate, sho
         <div className="p-4 border-t border-white/[0.07] text-xs text-slate-500">
           <div className="text-slate-300 font-semibold truncate">{storeName}</div>
           <div className="truncate">{user.email}</div>
-          <div className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-brand-sky">{ROLE_LABELS[role] || ROLE_LABELS.worker}</div>
+          <span className="mt-2 inline-flex rounded-full border border-brand-sky/25 bg-brand-sky/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-brand-sky">{ROLE_LABELS[role] || ROLE_LABELS.worker}</span>
+          {!showViewToggle && <button type="button" onClick={() => { onShowViewToggle(); setDrawer(false); }} className="mt-3 block text-xs font-semibold text-slate-300 hover:text-white">Show view toggle</button>}
         </div>
       </aside>
 
@@ -116,17 +122,23 @@ export default function TenantApp({ user, userData, path, setPath, navigate, sho
         <div className="lg:hidden fixed inset-0 z-50 no-print" role="dialog" aria-modal="true" aria-label="Menu">
           <button className="absolute inset-0 bg-black/60" onClick={() => setDrawer(false)} aria-label="Close menu" />
           <div className="absolute inset-y-0 left-0 w-72 max-w-[85vw] bg-ink-900 border-r border-white/10 flex flex-col">
-            <div className="h-16 px-4 flex items-center justify-between border-b border-white/10">
+            <div className="drawer-header h-16 px-4 flex items-center justify-between border-b border-white/10">
               <BrandMark size="sm" />
               <button onClick={() => setDrawer(false)} className="p-2 text-slate-400" aria-label="Close menu"><X size={20} /></button>
             </div>
             <NavList path={path} go={go} onLogout={onLogout} role={role} />
+            <div className="border-t border-white/10 p-4 text-xs text-slate-400">
+              <div className="truncate font-semibold text-white">{storeName}</div>
+              <div className="mt-1 truncate">{user.email}</div>
+              <span className="mt-2 inline-flex rounded-full border border-brand-sky/25 bg-brand-sky/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-brand-sky">{ROLE_LABELS[role] || ROLE_LABELS.worker}</span>
+              {!showViewToggle && <button type="button" onClick={() => { onShowViewToggle(); setDrawer(false); }} className="mt-3 block text-xs font-semibold text-slate-300 hover:text-white">Show view toggle</button>}
+            </div>
           </div>
         </div>
       )}
 
       <div className="flex-1 min-w-0 flex flex-col">
-        <header className="h-16 shrink-0 flex items-center justify-between gap-3 px-4 md:px-6 border-b border-white/[0.07] bg-ink-950/80 backdrop-blur no-print">
+        <header className="tenant-header shrink-0 flex items-center justify-between gap-3 px-4 md:px-6 border-b border-white/[0.07] bg-ink-950/80 backdrop-blur no-print">
           <div className="flex items-center gap-3 min-w-0">
             <button onClick={() => setDrawer(true)} className="lg:hidden p-2 -ml-2 text-slate-300" aria-label="Open menu"><Menu size={22} /></button>
             <div className="lg:hidden"><BrandMark size="sm" /></div>
@@ -135,7 +147,17 @@ export default function TenantApp({ user, userData, path, setPath, navigate, sho
               <div className="text-xs text-slate-500 truncate">{storeName}</div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            {showViewToggle && (
+              <div className="view-mode-toggle view-mode-toggle-tenant no-print">
+                <button className="view-mode-toggle-action" type="button" onClick={onSwitchSiteView}
+                  aria-label={`Switch to ${siteView === 'mobile' ? 'Desktop Site View' : 'Mobile View'}`} title={`Switch to ${siteView === 'mobile' ? 'Desktop Site View' : 'Mobile View'}`}>
+                  <ViewIcon size={16} aria-hidden="true" />
+                  <span className="hidden md:inline">{siteView === 'mobile' ? 'Desktop Site View' : 'Mobile View'}</span>
+                </button>
+                <button className="view-mode-toggle-dismiss" type="button" onClick={onHideViewToggle} aria-label="Hide view toggle" title="Hide view toggle"><X size={15} aria-hidden="true" /></button>
+              </div>
+            )}
             <span className={cn('hidden sm:inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border',
               online ? 'text-brand-green border-brand-green/30 bg-brand-green/10' : 'text-amber-300 border-amber-400/30 bg-amber-400/10')}>
               {online ? <Wifi size={13} /> : <WifiOff size={13} />} {online ? 'Online' : 'Offline'}
@@ -152,7 +174,7 @@ export default function TenantApp({ user, userData, path, setPath, navigate, sho
             Offline mode: changes will sync automatically
           </div>
         )}
-        <main id="main-scroll" className="flex-1 overflow-y-auto p-4 md:p-6 pb-24 lg:pb-6">
+        <main id="main-scroll" className="flex-1 overflow-y-auto p-4 md:p-6 pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-6">
           <Suspense fallback={<div className="py-24 flex justify-center"><Spinner /></div>}>{page}</Suspense>
         </main>
       </div>
