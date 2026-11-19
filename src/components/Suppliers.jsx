@@ -3,10 +3,13 @@ import { db } from '../firebase';
 import { storeCollection } from '../lib/storeAccess';
 import { collection, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
 import { Truck, Plus, FileText, Search, ShoppingCart } from 'lucide-react';
+import { readableFirebaseError } from '../lib/firebaseError';
 
-export default function Suppliers({ user, onNavigate, canEdit = true }) {
+export default function Suppliers({ user, onNavigate, canEdit = true, showToast }) {
   const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [retryKey, setRetryKey] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
   
   // Naya Supplier add karne ke states
@@ -15,15 +18,20 @@ export default function Suppliers({ user, onNavigate, canEdit = true }) {
 
   // Firebase se Suppliers fetch karna
   useEffect(() => {
-    if (!user?.uid) return;
+    if (!user?.uid || !user?.storeId) return undefined;
+    setLoading(true);
+    setLoadError('');
     const unsubscribe = onSnapshot(storeCollection(user.storeId, 'suppliers'), (snapshot) => {
       const suppData = [];
       snapshot.forEach(doc => suppData.push({ id: doc.id, ...doc.data() }));
       setSuppliers(suppData);
       setLoading(false);
+    }, (error) => {
+      setLoadError(readableFirebaseError(error, 'Supplier records could not be loaded.'));
+      setLoading(false);
     });
     return () => unsubscribe();
-  }, [user]);
+  }, [user?.uid, user?.storeId, retryKey]);
 
   // Naya Supplier save karna
   const handleAddSupplier = async (e) => {
@@ -36,8 +44,9 @@ export default function Suppliers({ user, onNavigate, canEdit = true }) {
       });
       setShowAddModal(false);
       setNewSupplier({ name: '', phone: '', gstin: '', address: '' });
+      showToast?.('Supplier added');
     } catch (error) {
-      console.error("Error adding supplier", error);
+      showToast?.(readableFirebaseError(error, 'Supplier could not be added.'), 'error');
     }
   };
 
@@ -91,6 +100,8 @@ export default function Suppliers({ user, onNavigate, canEdit = true }) {
             <tbody className="divide-y divide-slate-700/50">
               {loading ? (
                 <tr><td colSpan="4" className="p-8 text-center text-slate-500 font-bold">Loading Suppliers...</td></tr>
+              ) : loadError ? (
+                <tr><td colSpan="4" role="alert" className="p-8 text-center text-red-300 font-semibold">{loadError} <button type="button" onClick={() => setRetryKey((key) => key + 1)} className="ml-2 text-brand-sky underline">Retry</button></td></tr>
               ) : filteredSuppliers.length === 0 ? (
                 <tr><td colSpan="4" className="p-8 text-center text-slate-500 font-bold">No suppliers found. Add a new distributor to start.</td></tr>
               ) : (

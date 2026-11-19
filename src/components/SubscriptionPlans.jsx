@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { httpsCallable } from 'firebase/functions';
 import { ArrowRight, Check, Crown, ShieldCheck, Sparkles } from 'lucide-react';
 import { functions } from '../firebase';
+import { readableFirebaseError } from '../lib/firebaseError';
 import { Button, Card, PageHeader } from './ui';
 
 const PLAN_CARDS = [
@@ -10,32 +11,87 @@ const PLAN_CARDS = [
   { id: 'yearly', name: 'Yearly', price: 2799, display: '₹2,799', period: 'year', text: 'Best value for stores using MEDIVEU all year.', features: ['Everything in Monthly', 'One annual payment', 'Priority support'], featured: false },
 ];
 
+let checkoutPromise = null;
+
 function loadCheckout() {
   if (window.Razorpay) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const current = document.querySelector('script[data-razorpay-checkout]');
-    if (current) {
-      current.addEventListener('load', resolve, { once: true });
-      current.addEventListener('error', reject, { once: true });
-      return;
+  if (checkoutPromise) return checkoutPromise;
+
+  checkoutPromise = new Promise((resolve, reject) => {
+    const script = document.querySelector('script[data-razorpay-checkout]') || document.createElement('script');
+    let settled = false;
+    const cleanup = () => {
+      clearTimeout(timeoutId);
+      script.removeEventListener('load', handleLoad);
+      script.removeEventListener('error', handleError);
+    };
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (!window.Razorpay) script.remove();
+      reject(error);
+    };
+    const handleLoad = () => {
+      if (window.Razorpay) {
+        settled = true;
+        cleanup();
+        resolve();
+      } else {
+        fail(new Error('Razorpay checkout loaded without its payment interface. Try again or contact support.'));
+      }
+    };
+    const handleError = () => fail(new Error('Secure checkout could not load. Check your connection or content-blocker settings, then try again.'));
+    const timeoutId = window.setTimeout(() => fail(new Error('Secure checkout took too long to load. Check your connection and try again.')), 15000);
+
+    script.addEventListener('load', handleLoad);
+    script.addEventListener('error', handleError);
+    if (!script.src) {
+      script.dataset.razorpayCheckout = 'true';
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.async = true;
+      document.body.appendChild(script);
     }
-    const script = document.createElement('script');
-    script.dataset.razorpayCheckout = 'true';
-    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-    script.async = true;
-    script.onload = resolve;
-    script.onerror = reject;
-    document.body.appendChild(script);
+  }).catch((error) => {
+    checkoutPromise = null;
+    throw error;
   });
+
+  return checkoutPromise;
 }
 
 export default function SubscriptionPlans({ user, userData, showToast, navigate }) {
   const [loading, setLoading] = useState(false);
   const [checkoutReady, setCheckoutReady] = useState(Boolean(window.Razorpay));
+  const [checkoutLoading, setCheckoutLoading] = useState(!window.Razorpay);
+  const [checkoutError, setCheckoutError] = useState('');
+
+  const retryCheckout = async () => {
+    setCheckoutLoading(true);
+    setCheckoutError('');
+    try {
+      await loadCheckout();
+      setCheckoutReady(true);
+    } catch (error) {
+      setCheckoutReady(false);
+      setCheckoutError(error?.message || 'Secure checkout could not be loaded.');
+    } finally {
+      setCheckoutLoading(false);
+    }
+  };
 
   useEffect(() => {
     let active = true;
-    loadCheckout().then(() => active && setCheckoutReady(true)).catch(() => active && setCheckoutReady(false));
+    loadCheckout().then(() => {
+      if (active) setCheckoutReady(true);
+    }).catch((error) => {
+      if (active) {
+        setCheckoutReady(false);
+        setCheckoutError(error?.message || 'Secure checkout could not be loaded.');
+      }
+    }).finally(() => {
+      if (active) setCheckoutLoading(false);
+    });
     return () => { active = false; };
   }, []);
 
@@ -80,7 +136,7 @@ export default function SubscriptionPlans({ user, userData, showToast, navigate 
             navigate?.('app', 'pos');
           } catch (error) {
             console.error('Payment verification failed:', error);
-            showToast('Payment was received but could not yet be verified. Please contact support; do not pay again.', 'error');
+            showToast(`Payment verification is pending: ${readableFirebaseError(error, 'contact support for a status check')}. Do not submit payment again until your plan status is confirmed.`, 'error');
           } finally {
             setLoading(false);
           }
@@ -94,7 +150,7 @@ export default function SubscriptionPlans({ user, userData, showToast, navigate 
       checkout.open();
     } catch (error) {
       console.error('Subscription checkout error:', error);
-      showToast(error?.message || 'Could not start secure checkout.', 'error');
+      showToast(readableFirebaseError(error, 'Secure checkout could not be started.'), 'error');
       setLoading(false);
     }
   };
@@ -118,6 +174,12 @@ export default function SubscriptionPlans({ user, userData, showToast, navigate 
           </Card>
         ))}
       </div>
+      {!checkoutReady && (
+        <div role={checkoutError ? 'alert' : 'status'} className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-amber-400/20 bg-amber-400/[0.06] p-4 text-sm text-amber-100">
+          <p>{checkoutLoading ? 'Loading secure checkout…' : checkoutError || 'Secure checkout is unavailable.'}</p>
+          {!checkoutLoading && <Button type="button" variant="secondary" onClick={retryCheckout}>Retry checkout</Button>}
+        </div>
+      )}
       <div className="mt-5 rounded-xl border border-white/[0.07] bg-white/[0.02] p-4 flex items-start gap-3 text-xs text-slate-400"><ShieldCheck size={17} className="text-brand-green shrink-0" /><p>Payments are verified on MEDIVEU&apos;s secure server before a plan or referral reward is applied. Referral rewards need 3 separate, verified monthly subscriptions; yearly purchases do not count.</p></div>
       {userData?.subscriptionEndsAt && <p className="mt-3 text-center text-xs text-slate-500">Current plan: {userData.plan}. Expiry is updated automatically after verified payments.</p>}
     </div>

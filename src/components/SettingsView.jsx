@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { collection, doc, setDoc, writeBatch } from 'firebase/firestore';
+import { collection, doc, writeBatch } from 'firebase/firestore';
 import { Download, Upload, Save } from 'lucide-react';
 import { db } from '../firebase';
 import { Button, Card, Field, PageHeader } from './ui';
 import { TEMPLATES } from './invoice-templates';
 import TeamAccess from './TeamAccess';
 import { storeCollection, storeDocument } from '../lib/storeAccess';
+import { readableFirebaseError } from '../lib/firebaseError';
 
 const GENERAL_FIELDS = [
   ['storeName', 'Store Name', 'sm:col-span-2'],
@@ -26,13 +27,17 @@ export default function SettingsView({ user, userData, data, showToast }) {
   const [general, setGeneral] = useState(() => ({ ...Object.fromEntries(GENERAL_FIELDS.map(([k]) => [k, ''])), ...Object.fromEntries(BANK_FIELDS.map(([k]) => [k, ''])), terms: '', ...(s.general || {}) }));
   const [invoice, setInvoice] = useState(() => ({ prefix: 'INV', defaultTemplate: 'pharma', ...(s.invoice || {}) }));
 
-  const save = (e) => {
+  const save = async (e) => {
     e.preventDefault();
-    Promise.all([
-      setDoc(storeDocument(user.storeId, 'settings', 'general'), general, { merge: true }),
-      setDoc(storeDocument(user.storeId, 'settings', 'invoice'), invoice, { merge: true }),
-    ]).catch(() => showToast('Failed to sync settings', 'error'));
-    showToast('Settings saved');
+    try {
+      const batch = writeBatch(db);
+      batch.set(storeDocument(user.storeId, 'settings', 'general'), general, { merge: true });
+      batch.set(storeDocument(user.storeId, 'settings', 'invoice'), invoice, { merge: true });
+      await batch.commit();
+      showToast('Settings saved');
+    } catch (error) {
+      showToast(readableFirebaseError(error, 'Settings could not be saved.'), 'error');
+    }
   };
 
   const exportBackup = async () => {
@@ -49,11 +54,23 @@ export default function SettingsView({ user, userData, data, showToast }) {
   const importBackup = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    const input = e.target;
     const reader = new FileReader();
-    reader.onload = async (ev) => {
+    reader.onload = async (event) => {
+      let imported;
       try {
-        const imported = JSON.parse(ev.target.result);
+        imported = JSON.parse(event.target.result);
         if (!imported.exportDate) throw new Error('invalid');
+        for (const list of [imported.inventory || imported.medicines, imported.bills, imported.customers, imported.suppliers]) {
+          if (list !== undefined && !Array.isArray(list)) throw new Error('invalid');
+        }
+      } catch {
+        showToast('Invalid or corrupted backup file', 'error');
+        input.value = '';
+        return;
+      }
+
+      try {
         const batch = writeBatch(db);
         const put = (name, list) => (list || []).forEach(({ id, ...rest }) => batch.set(id ? storeDocument(user.storeId, name, id) : doc(storeCollection(user.storeId, name)), rest, { merge: true }));
         put('inventory', imported.inventory || imported.medicines);
@@ -61,12 +78,17 @@ export default function SettingsView({ user, userData, data, showToast }) {
         put('customers', imported.customers);
         put('suppliers', imported.suppliers);
         if (imported.settings?.general) batch.set(storeDocument(user.storeId, 'settings', 'general'), imported.settings.general, { merge: true });
-        batch.commit().catch(() => showToast('Restore sync failed', 'error'));
+        await batch.commit();
         showToast('Backup restored');
-      } catch {
-        showToast('Invalid or corrupted backup file', 'error');
+      } catch (error) {
+        showToast(readableFirebaseError(error, 'Backup restore failed. No records were confirmed as restored.'), 'error');
+      } finally {
+        input.value = '';
       }
-      e.target.value = '';
+    };
+    reader.onerror = () => {
+      showToast('The backup file could not be read.', 'error');
+      input.value = '';
     };
     reader.readAsText(file);
   };

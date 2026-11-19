@@ -1,12 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../firebase';
 import { storeCollection, storeDocument } from '../lib/storeAccess';
-import { collection, onSnapshot, addDoc, updateDoc, doc, serverTimestamp, getDocs, query, where } from 'firebase/firestore';
+import { collection, onSnapshot, doc, serverTimestamp, query, where, runTransaction } from 'firebase/firestore';
+import { readableFirebaseError } from '../lib/firebaseError';
 import { ShoppingCart, Save, Plus, Trash2, ArrowLeft } from 'lucide-react';
 
-export default function PurchaseEntry({ user, onNavigate, preSelectedSupplier }) {
+export default function PurchaseEntry({ user, onNavigate, preSelectedSupplier, showToast }) {
   const [suppliers, setSuppliers] = useState([]);
+  const [supplierError, setSupplierError] = useState('');
+  const [supplierRetry, setSupplierRetry] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
+  const isProcessingRef = useRef(false);
+  const pendingOperationRef = useRef(null);
 
   // Bill Details State
   const [billDetails, setBillDetails] = useState({
@@ -27,14 +32,15 @@ export default function PurchaseEntry({ user, onNavigate, preSelectedSupplier })
 
   // 1. Fetch Suppliers Dropdown
   useEffect(() => {
-    if (!user?.uid) return;
-    const unsubscribe = onSnapshot(storeCollection(user.storeId, 'suppliers'), (snapshot) => {
-      const suppData = [];
-      snapshot.forEach(doc => suppData.push({ id: doc.id, ...doc.data() }));
+    if (!user?.uid || !user?.storeId) return undefined;
+    setSupplierError('');
+    return onSnapshot(storeCollection(user.storeId, 'suppliers'), (snapshot) => {
+      const suppData = snapshot.docs.map((document) => ({ id: document.id, ...document.data() }));
       setSuppliers(suppData);
+    }, (error) => {
+      setSupplierError(readableFirebaseError(error, 'Supplier list could not be loaded.'));
     });
-    return () => unsubscribe();
-  }, [user]);
+  }, [user?.uid, user?.storeId, supplierRetry]);
 
   // 2. Auto-Calculate Totals
   useEffect(() => {
@@ -68,78 +74,125 @@ export default function PurchaseEntry({ user, onNavigate, preSelectedSupplier })
   const addRow = () => setItems([...items, { id: Date.now(), name: '', batchNo: '', expiryDate: '', qty: 0, rate: 0, mrp: 0, gstPercent: 12 }]);
   const removeRow = (index) => { if (items.length > 1) setItems(items.filter((_, i) => i !== index)); };
 
-  // 3. MASTER SAVE LOGIC (Purchase + Inventory + Ledger)
   const handleSavePurchase = async () => {
-    if (!billDetails.supplierName) return alert("Please select a Supplier!");
-    if (!billDetails.invoiceNumber) return alert("Please enter the Bill/Invoice Number!");
-    if (items[0].name === '') return alert("Please add at least one medicine!");
+    if (isProcessingRef.current) return;
+    if (!billDetails.supplierId) return showToast?.('Choose a supplier from the list.', 'error');
+    if (!billDetails.invoiceNumber.trim()) return showToast?.('Enter the supplier invoice number.', 'error');
+    const normalizedItems = items.filter((item) => item.name.trim()).map((item) => ({
+      ...item,
+      name: item.name.trim().toUpperCase(),
+      batchNo: item.batchNo.trim().toUpperCase() || 'N/A',
+      qty: Number(item.qty),
+      rate: Number(item.rate),
+      mrp: Number(item.mrp) || 0,
+      gstPercent: Number(item.gstPercent),
+    }));
+    if (!normalizedItems.length) return showToast?.('Add at least one medicine to this purchase.', 'error');
+    if (items.some((item) => !item.name.trim() && (Number(item.qty) || Number(item.rate)))) {
+      return showToast?.('Complete or remove each purchase line before saving.', 'error');
+    }
+    if (normalizedItems.some((item) => !Number.isFinite(item.qty) || item.qty <= 0 || !Number.isFinite(item.rate) || item.rate < 0 || !Number.isFinite(item.mrp) || item.mrp < 0 || !Number.isFinite(item.gstPercent))) {
+      return showToast?.('Enter valid positive quantities and non-negative prices for every medicine.', 'error');
+    }
 
+    const groups = new Map();
+    normalizedItems.forEach((item) => {
+      const key = `${item.name}::${item.batchNo}`;
+      const group = groups.get(key) || { ...item, qty: 0, weightedRate: 0 };
+      group.qty += item.qty;
+      group.weightedRate += item.qty * item.rate;
+      group.mrp = item.mrp;
+      group.gstPercent = item.gstPercent;
+      group.expiryDate = item.expiryDate || group.expiryDate;
+      groups.set(key, group);
+    });
+    const stockGroups = [...groups.values()];
+    if (stockGroups.length > 450) return showToast?.('This purchase has too many unique stock lines. Split it into smaller purchases.', 'error');
+
+    isProcessingRef.current = true;
     setIsProcessing(true);
+    const operationKey = JSON.stringify({ billDetails, normalizedItems, totals });
+    if (pendingOperationRef.current?.key !== operationKey) {
+      pendingOperationRef.current = {
+        key: operationKey,
+        purchaseRef: doc(collection(storeCollection(user.storeId, 'purchases'))),
+        supplierTransactionRef: doc(collection(storeCollection(user.storeId, 'supplier_transactions'))),
+        inventoryRefs: new Map(stockGroups.map((group) => [`${group.name}::${group.batchNo}`, doc(collection(storeCollection(user.storeId, 'inventory')))])),
+      };
+    }
+    const operation = pendingOperationRef.current;
+
     try {
-      // A. Save Purchase Bill
-      await addDoc(storeCollection(user.storeId, 'purchases'), {
-        billDetails,
-        items,
-        totals,
-        createdAt: serverTimestamp()
-      });
+      const result = await runTransaction(db, async (transaction) => {
+        const previousPurchase = await transaction.get(operation.purchaseRef);
+        if (previousPurchase.exists()) return 'already-saved';
 
-      // B. Update Inventory (Auto-Plus Stock)
-      for (const item of items) {
-        if (item.name && item.qty > 0) {
-          // Check if medicine with same batch already exists
-          const q = query(
-            storeCollection(user.storeId, 'inventory'),
-            where('name', '==', item.name.toUpperCase()),
-            where('batchNo', '==', item.batchNo.toUpperCase())
-          );
-          const snap = await getDocs(q);
+        const supplierRef = storeDocument(user.storeId, 'suppliers', billDetails.supplierId);
+        const supplierSnapshot = await transaction.get(supplierRef);
+        const names = [...new Set(stockGroups.map((group) => group.name))];
+        const inventorySnapshots = await Promise.all(names.map((name) => transaction.get(query(
+          storeCollection(user.storeId, 'inventory'),
+          where('name', '==', name),
+        ))));
+        if (!supplierSnapshot.exists()) throw new Error('The selected supplier no longer exists. Refresh the supplier list.');
 
-          if (!snap.empty) {
-            // Update existing stock
-            const invDoc = snap.docs[0];
-            const oldQty = Number(invDoc.data().qty) || 0;
-            await updateDoc(storeDocument(user.storeId, 'inventory', invDoc.id), {
-              qty: oldQty + Number(item.qty),
-              rate: Number(item.rate), // Update to new purchase rate
-              mrp: Number(item.mrp),
-              expiryDate: item.expiryDate || invDoc.data().expiryDate
-            });
+        const byName = new Map(names.map((name, index) => [name, inventorySnapshots[index]]));
+        const matches = stockGroups.map((group) => {
+          const snapshot = byName.get(group.name);
+          const match = snapshot.docs.find((document) => (String(document.data().batchNo || 'N/A').trim().toUpperCase() || 'N/A') === group.batchNo);
+          return { group, match };
+        });
+
+        transaction.set(operation.purchaseRef, {
+          billDetails: { ...billDetails, invoiceNumber: billDetails.invoiceNumber.trim() },
+          items: normalizedItems,
+          totals,
+          createdBy: user.uid,
+          createdAt: serverTimestamp(),
+        });
+        matches.forEach(({ group, match }) => {
+          const key = `${group.name}::${group.batchNo}`;
+          const rate = group.weightedRate / group.qty;
+          const fields = {
+            qty: (Number(match?.data().qty) || 0) + group.qty,
+            rate,
+            mrp: group.mrp,
+            gstPercent: group.gstPercent,
+            expiryDate: group.expiryDate || match?.data().expiryDate || '',
+            updatedAt: serverTimestamp(),
+          };
+          if (match) {
+            transaction.update(storeDocument(user.storeId, 'inventory', match.id), fields);
           } else {
-            // Add as new stock item
-            await addDoc(storeCollection(user.storeId, 'inventory'), {
-              name: item.name.toUpperCase(),
-              batchNo: item.batchNo.toUpperCase() || 'N/A',
-              expiryDate: item.expiryDate,
-              qty: Number(item.qty),
-              rate: Number(item.rate),
-              mrp: Number(item.mrp),
-              gstPercent: Number(item.gstPercent),
-              createdAt: serverTimestamp()
+            transaction.set(operation.inventoryRefs.get(key), {
+              name: group.name,
+              batchNo: group.batchNo,
+              ...fields,
+              createdAt: serverTimestamp(),
             });
           }
-        }
-      }
-
-      // C. Update Supplier Ledger (Khata) - Hum par udhaar chadha
-      await addDoc(storeCollection(user.storeId, 'supplier_transactions'), {
-        supplierId: billDetails.supplierId,
-        supplierName: billDetails.supplierName,
-        type: 'DEBIT', // Humne maal kharida, paise dene baaki hain
-        amount: totals.grandTotal,
-        description: `Purchase Bill: ${billDetails.invoiceNumber}`,
-        date: billDetails.invoiceDate,
-        timestamp: serverTimestamp()
+        });
+        transaction.set(operation.supplierTransactionRef, {
+          supplierId: billDetails.supplierId,
+          supplierName: billDetails.supplierName,
+          type: 'DEBIT',
+          amount: totals.grandTotal,
+          description: `Purchase Bill: ${billDetails.invoiceNumber.trim()}`,
+          date: billDetails.invoiceDate,
+          timestamp: serverTimestamp(),
+        });
+        return 'saved';
       });
 
-      alert('Purchase Bill Saved! Stock automatically added to Inventory.');
-      if (onNavigate) onNavigate('suppliers'); // Go back to suppliers page
-
+      pendingOperationRef.current = null;
+      showToast?.(result === 'already-saved' ? 'This purchase was already saved.' : 'Purchase saved; inventory and supplier ledger updated.');
+      onNavigate?.('suppliers');
     } catch (error) {
-      console.error("Error saving purchase:", error);
-      alert('Error saving purchase bill!');
+      showToast?.(readableFirebaseError(error, 'Purchase could not be saved. No purchase, stock, or ledger changes were committed.'), 'error');
+    } finally {
+      isProcessingRef.current = false;
+      setIsProcessing(false);
     }
-    setIsProcessing(false);
   };
 
   const fiClass = "w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white outline-none focus:border-blue-500 text-sm transition-colors uppercase font-bold";
@@ -182,6 +235,7 @@ export default function PurchaseEntry({ user, onNavigate, preSelectedSupplier })
               <option value="">-- SELECT SUPPLIER --</option>
               {suppliers.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
             </select>
+            {supplierError && <p role="alert" className="mt-2 text-xs text-red-300">{supplierError} <button type="button" onClick={() => setSupplierRetry((key) => key + 1)} className="text-brand-sky underline">Retry</button></p>}
           </div>
           <div>
             <label className={flClass}>Supplier Invoice No.</label>

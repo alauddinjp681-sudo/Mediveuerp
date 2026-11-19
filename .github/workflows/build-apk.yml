@@ -135,7 +135,12 @@ jobs:
           set -Eeuo pipefail
           apk="app/build/outputs/apk/release/app-release.apk"
           aab="app/build/outputs/bundle/release/app-release.aab"
-          apksigner="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools/36.0.0/apksigner"
+          android_sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [ -z "$android_sdk" ]; then
+            echo "::error title=Android SDK missing::Neither ANDROID_HOME nor ANDROID_SDK_ROOT is set."
+            exit 1
+          fi
+          apksigner="$android_sdk/build-tools/36.0.0/apksigner"
           for artifact in "$apk" "$aab"; do
             if [ ! -s "$artifact" ]; then
               echo "::error title=Missing release artifact::$artifact was not created or is empty."

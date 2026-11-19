@@ -3,10 +3,13 @@ import { db } from '../firebase';
 import { storeCollection } from '../lib/storeAccess';
 import { collection, addDoc, query, where, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { ArrowLeft, Plus, IndianRupee, FileText, Download } from 'lucide-react';
+import { readableFirebaseError } from '../lib/firebaseError';
 
-export default function CustomerLedger({ user, customer, onBack, canEdit = true }) {
+export default function CustomerLedger({ user, customer, onBack, canEdit = true, showToast }) {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [retryKey, setRetryKey] = useState(0);
   
   // Payment add karne ke states
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -15,26 +18,24 @@ export default function CustomerLedger({ user, customer, onBack, canEdit = true 
 
   // Firebase se customer ke saare transactions (Bills aur Payments) auto-fetch karna
   useEffect(() => {
-    if (!user?.uid || !customer?.id) return;
-
-    // Database query: Is customer ka saara data date ke hisaab se lao
+    if (!user?.uid || !user?.storeId || !customer?.id) return undefined;
+    setLoading(true);
+    setLoadError('');
     const q = query(
       storeCollection(user.storeId, 'transactions'),
       where('customerId', '==', customer.id)
     );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const transData = [];
-      snapshot.forEach(doc => {
-        transData.push({ id: doc.id, ...doc.data() });
-      });
+    return onSnapshot(q, (snapshot) => {
+      const transData = snapshot.docs.map((document) => ({ id: document.id, ...document.data() }));
       transData.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
       setTransactions(transData);
       setLoading(false);
-    }, () => setLoading(false));
-
-    return () => unsubscribe();
-  }, [user, customer]);
+    }, (error) => {
+      setLoadError(readableFirebaseError(error, 'Customer transactions could not be loaded.'));
+      setLoading(false);
+    });
+  }, [user?.uid, user?.storeId, customer?.id, retryKey]);
 
   // Naya Payment (Jama) add karne ka function
   const handleAddPayment = async (e) => {
@@ -57,9 +58,9 @@ export default function CustomerLedger({ user, customer, onBack, canEdit = true 
       setShowPaymentModal(false);
       setPaymentAmount('');
       setPaymentNote('');
+      showToast?.('Payment recorded');
     } catch (error) {
-      console.error("Payment add error", error);
-      alert("Error adding payment. Please try again.");
+      showToast?.(readableFirebaseError(error, 'The customer payment could not be saved.'), 'error');
     }
   };
 
@@ -125,6 +126,8 @@ export default function CustomerLedger({ user, customer, onBack, canEdit = true 
             <tbody className="divide-y divide-slate-700/50">
               {loading ? (
                 <tr><td colSpan="4" className="p-8 text-center text-slate-500 font-bold">Loading Transactions...</td></tr>
+              ) : loadError ? (
+                <tr><td colSpan="4" role="alert" className="p-8 text-center text-red-300 font-semibold">{loadError}<button type="button" onClick={() => setRetryKey((key) => key + 1)} className="ml-3 text-brand-sky underline">Retry</button></td></tr>
               ) : transactions.length === 0 ? (
                 <tr><td colSpan="4" className="p-8 text-center text-slate-500 font-bold">No transactions found for this customer.</td></tr>
               ) : (
