@@ -102,7 +102,7 @@ jobs:
           set -euo pipefail
           umask 077
           keystore_path="$RUNNER_TEMP/mediveu-release.jks"
-          if ! printf '%s' "$ANDROID_KEYSTORE_BASE64" | tr -d '\r\n ' | base64 --decode > "$keystore_path" || [ ! -s "$keystore_path" ]; then
+          if ! printf '%s' "$ANDROID_KEYSTORE_BASE64" | tr -cd 'A-Za-z0-9+/=' | base64 --decode > "$keystore_path" || [ ! -s "$keystore_path" ]; then
             echo "::error title=Invalid keystore::ANDROID_KEYSTORE_BASE64 is not valid base64 of a keystore file."
             exit 1
           fi
