@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { collection, onSnapshot } from 'firebase/firestore';
-import { httpsCallable } from 'firebase/functions';
+import { collection, doc, onSnapshot, serverTimestamp, setDoc, Timestamp, updateDoc } from 'firebase/firestore';
 import { Copy, KeyRound, RefreshCw, Users } from 'lucide-react';
-import { db, functions } from '../firebase';
+import { db } from '../firebase';
 import { storeCollection } from '../lib/storeAccess';
 import { Button, Card, Field } from './ui';
 import { readableFirebaseError } from '../lib/firebaseError';
@@ -12,6 +11,17 @@ const roles = [
   { id: 'worker', label: 'Worker / Staff' },
   { id: 'accountant', label: 'Accountant' },
 ];
+const INVITATION_LIFETIME_MS = 14 * 24 * 60 * 60 * 1000;
+
+function makeInvitationCode() {
+  return Array.from(crypto.getRandomValues(new Uint8Array(32)), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function hashInvitationCode(code) {
+  const bytes = new TextEncoder().encode(code);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
 
 export default function TeamAccess({ user, showToast }) {
   const [members, setMembers] = useState([]);
@@ -25,20 +35,38 @@ export default function TeamAccess({ user, showToast }) {
   useEffect(() => {
     if (!user?.storeId || user.role !== 'owner') return undefined;
     setLoadError('');
-    return onSnapshot(storeCollection(user.storeId, 'members'), (snapshot) => {
+    return onSnapshot(collection(db, 'stores', user.storeId, 'members'), (snapshot) => {
       setMembers(snapshot.docs.map((document) => ({ id: document.id, ...document.data() })));
     }, (error) => {
       setLoadError(readableFirebaseError(error, 'Team membership could not be loaded.'));
     });
-  }, [user?.storeId, user?.role, showToast, retryKey]);
+  }, [user?.storeId, user?.role, retryKey]);
 
   const createInvite = async () => {
-    if (!email.trim()) return showToast('Enter the teammate’s email address', 'error');
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) || normalizedEmail.length > 254) {
+      showToast('Enter a valid teammate email address', 'error');
+      return;
+    }
+    if (!roles.some((item) => item.id === role)) {
+      showToast('Choose a valid team role', 'error');
+      return;
+    }
+
     setBusy(true);
     try {
-      const createInvitation = httpsCallable(functions, 'createStoreInvitation');
-      const { data } = await createInvitation({ email: email.trim(), role });
-      setInvite(data);
+      const code = makeInvitationCode();
+      const invitationId = await hashInvitationCode(code);
+      await setDoc(doc(db, 'storeInvitations', invitationId), {
+        storeId: user.storeId,
+        email: normalizedEmail,
+        role,
+        status: 'pending',
+        createdBy: user.uid,
+        createdAt: serverTimestamp(),
+        expiresAt: Timestamp.fromMillis(Date.now() + INVITATION_LIFETIME_MS),
+      });
+      setInvite({ code, email: normalizedEmail, expiresInDays: 14 });
       setEmail('');
       showToast('Invitation code created. Share it only with the invited email.');
     } catch (error) {
@@ -49,10 +77,10 @@ export default function TeamAccess({ user, showToast }) {
   };
 
   const changeRole = async (memberUid, nextRole) => {
+    if (!roles.some((item) => item.id === nextRole)) return;
     setBusy(true);
     try {
-      const changeMemberRole = httpsCallable(functions, 'changeStoreMemberRole');
-      await changeMemberRole({ memberUid, role: nextRole });
+      await updateDoc(doc(db, 'stores', user.storeId, 'members', memberUid), { role: nextRole });
       showToast('Team permissions updated');
     } catch (error) {
       showToast(readableFirebaseError(error, 'Could not update team role.'), 'error');

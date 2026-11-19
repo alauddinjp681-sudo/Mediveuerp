@@ -2,8 +2,7 @@ import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useStat
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { Monitor, Smartphone } from 'lucide-react';
 import { collection, doc, onSnapshot } from 'firebase/firestore';
-import { httpsCallable } from 'firebase/functions';
-import { auth, db, functions, firebaseConfigError } from './firebase';
+import { auth, db, firebaseConfigError } from './firebase';
 import { storeCollection, storeDocument } from './lib/storeAccess';
 import { setupStoreForUser } from './lib/storeSetup';
 import { describeSetupError } from './lib/setupError';
@@ -137,16 +136,6 @@ export default function App() {
         sessionStore.removeItem('mediveu-registration');
         setStoreSetupError(null);
         const storeId = context.storeId;
-        const referrerUid = String(registration.referrerUid || '').trim();
-        if (referrerUid) {
-          try {
-            await httpsCallable(functions, 'attachReferral')({ referrerUid });
-            showToast('Account created with referral linked. Your 7-day trial has started.');
-          } catch (error) {
-            const reason = readableFirebaseError(error, 'the referral could not be linked');
-            showToast(`Your account is ready, but the referral could not be linked: ${reason}. Contact support before subscribing.`, 'error');
-          }
-        }
 
         unsubs.push(onSnapshot(doc(db, 'users', user.uid), (snapshot) => setUserDoc(snapshot.exists() ? snapshot.data() : {}), onErr('account')));
         unsubs.push(onSnapshot(storeDocument(storeId, 'members', user.uid), (snapshot) => {
