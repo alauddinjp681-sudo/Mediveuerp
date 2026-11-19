@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { createUserWithEmailAndPassword, sendPasswordResetEmail, signInWithEmailAndPassword } from 'firebase/auth';
+import { Capacitor } from '@capacitor/core';
 import { Receipt, Package, WifiOff, Smartphone, LayoutTemplate, BarChart3, ShieldCheck, Users, Check, ArrowRight, Menu, X, Phone, Mail, Download, LockKeyhole, Sparkles } from 'lucide-react';
 import { auth } from '../../firebase';
 import { sessionStore } from '../../lib/sessionStore';
@@ -72,7 +73,7 @@ function Home({ setTab }) {
 
 function InstallAppCard() {
   const [installPrompt, setInstallPrompt] = useState(null);
-  const [installed, setInstalled] = useState(() => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true);
+  const [installed, setInstalled] = useState(() => Capacitor.isNativePlatform() || window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true);
   const [showInstructions, setShowInstructions] = useState(false);
 
   useEffect(() => {
@@ -97,10 +98,15 @@ function InstallAppCard() {
       setShowInstructions((visible) => !visible);
       return;
     }
-    await installPrompt.prompt();
-    const choice = await installPrompt.userChoice;
-    if (choice.outcome === 'accepted') setInstalled(true);
-    setInstallPrompt(null);
+    try {
+      await installPrompt.prompt();
+      const choice = await installPrompt.userChoice;
+      if (choice.outcome === 'accepted') setInstalled(true);
+      setInstallPrompt(null);
+    } catch {
+      setInstallPrompt(null);
+      setShowInstructions(true);
+    }
   };
 
   return (
@@ -109,17 +115,17 @@ function InstallAppCard() {
         <span className="w-10 h-10 shrink-0 rounded-xl bg-brand-sky/10 text-brand-sky grid place-items-center"><Smartphone size={20} /></span>
         <div className="min-w-0">
           <h3 className="font-semibold text-white">{installed ? 'MEDIVEU ERP is installed' : 'Use MEDIVEU like an app'}</h3>
-          <p className="text-sm text-slate-400 mt-1">Install it on your phone or computer for a full-screen shortcut and offline access, or get the Android release.</p>
+          <p className="text-sm text-slate-400 mt-1">{installed ? 'You are using MEDIVEU as an installed app.' : 'Install it on your phone or computer for a full-screen shortcut and offline access, or download the Android release.'}</p>
           {showInstructions && !installed && (
-            <p className="text-sm text-slate-300 mt-2" role="status">On iPhone or iPad, tap Share then Add to Home Screen. On Android or desktop, open the browser menu and choose Install app or Add to Home screen.</p>
+            <p className="text-sm text-slate-300 mt-2" role="status">{/iPhone|iPad|iPod/.test(navigator.userAgent) ? 'Open Share and tap Add to Home Screen.' : 'Open your browser menu and choose Install app or Add to Home screen.'}</p>
           )}
         </div>
       </div>
       <div className="flex flex-col sm:flex-row w-full md:w-auto gap-2 shrink-0">
-        {!installed && <Button variant="secondary" className="w-full md:w-auto" onClick={install}><Download size={16} /> {installPrompt ? 'Install web app' : showInstructions ? 'Hide install steps' : 'Install web app'}</Button>}
-        <a href="https://github.com/salauddeen680/Mediveuerp/releases/latest" target="_blank" rel="noreferrer" className="btn-ghost justify-center" aria-label="Open MEDIVEU Android APK downloads on GitHub">
+        {!installed && <Button variant="secondary" className="w-full md:w-auto" onClick={install}><Download size={16} /> {showInstructions && !installPrompt ? 'Hide install steps' : 'Install web app'}</Button>}
+        {!installed && <a href="/mediveu.apk" download="Mediveu-ERP.apk" className="btn-ghost justify-center" aria-label="Download the MEDIVEU Android APK">
           <Download size={16} /> Android APK
-        </a>
+        </a>}
       </div>
     </Card>
   );

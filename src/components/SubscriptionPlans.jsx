@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ArrowRight, Check, Crown, ShieldCheck, Sparkles } from 'lucide-react';
+import { auth } from '../firebase';
 import { Button, Card, Field, PageHeader } from './ui';
 
 const PLAN_CARDS = [
@@ -40,9 +41,15 @@ export default function SubscriptionPlans({ user, userData, showToast, navigate 
       navigate?.('public', 'login');
       return;
     }
+    const authUser = auth.currentUser;
+    if (!authUser) {
+      showToast('Your login session has expired. Please log in again before upgrading.', 'error');
+      navigate?.('public', 'login');
+      return;
+    }
     setCheckoutPlan(planId);
     try {
-      const token = await user.getIdToken();
+      const token = await authUser.getIdToken();
       const response = await fetch('/api/create-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -62,7 +69,9 @@ export default function SubscriptionPlans({ user, userData, showToast, navigate 
         theme: { color: '#38bdf8' },
         handler: async (payment) => {
           try {
-            const verifyToken = await user.getIdToken();
+            const authUser = auth.currentUser;
+            if (!authUser) throw new Error('Your login session has expired. Please log in again. Do not pay again; contact support if you were charged.');
+            const verifyToken = await authUser.getIdToken();
             const verifyResponse = await fetch('/api/verify-payment', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${verifyToken}` },
