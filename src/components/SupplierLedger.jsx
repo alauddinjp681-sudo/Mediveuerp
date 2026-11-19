@@ -2,17 +2,18 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { collection, doc, onSnapshot, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 import { ArrowLeft, IndianRupee } from 'lucide-react';
 import { db } from '../firebase';
+import { storeCollection, storeDocument } from '../lib/storeAccess';
 import { Button, Card, Field, PageHeader } from './ui';
 import { formatDate, formatMoney, toMillis, toNumber, todayISO } from '../lib/format';
 
-export default function SupplierLedger({ user, supplier, onBack, showToast }) {
+export default function SupplierLedger({ user, supplier, onBack, showToast, canEdit = true }) {
   const [txns, setTxns] = useState([]);
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
 
   useEffect(() => {
     if (!user?.uid || !supplier?.id) return undefined;
-    const q = query(collection(db, 'users', user.uid, 'supplier_transactions'), where('supplierId', '==', supplier.id));
+    const q = query(storeCollection(user.storeId, 'supplier_transactions'), where('supplierId', '==', supplier.id));
     return onSnapshot(q, (s) => setTxns(s.docs.map((d) => ({ id: d.id, ...d.data() }))), (e) => console.error(e));
   }, [user, supplier]);
 
@@ -30,7 +31,7 @@ export default function SupplierLedger({ user, supplier, onBack, showToast }) {
     e.preventDefault();
     const amt = toNumber(amount);
     if (amt <= 0) return showToast('Enter a valid amount', 'error');
-    setDoc(doc(collection(db, 'users', user.uid, 'supplier_transactions')), {
+    setDoc(doc(storeCollection(user.storeId, 'supplier_transactions')), {
       supplierId: supplier.id,
       supplierName: supplier.name,
       type: 'CREDIT',
@@ -60,11 +61,11 @@ export default function SupplierLedger({ user, supplier, onBack, showToast }) {
           <div className="text-xs text-slate-500 mt-1">{balance > 0 ? 'You owe this supplier' : 'Settled / advance'}</div>
         </Card>
         <Card className="p-5 sm:col-span-2">
-          <form onSubmit={addPayment} className="grid sm:grid-cols-[1fr_2fr_auto] gap-3 items-end">
+          {canEdit ? <form onSubmit={addPayment} className="grid sm:grid-cols-[1fr_2fr_auto] gap-3 items-end">
             <Field label="Amount paid" type="number" inputMode="decimal" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} />
             <Field label="Note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="UPI / Cash / Cheque no." />
             <Button type="submit"><IndianRupee size={16} /> Record</Button>
-          </form>
+          </form> : <p className="text-sm text-slate-400">Read-only supplier ledger</p>}
         </Card>
       </div>
       <Card className="overflow-x-auto">

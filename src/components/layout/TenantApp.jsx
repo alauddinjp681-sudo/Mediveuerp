@@ -2,6 +2,7 @@ import React, { Suspense, lazy, useEffect, useState } from 'react';
 import { Home, Receipt, Package, Users, Truck, BarChart3, Crown, Settings, LogOut, Menu, X, Wifi, WifiOff, ShoppingCart, MoreHorizontal, Gift } from 'lucide-react';
 import { BrandMark, Spinner, cn } from '../ui';
 import { useSubscriptionTimer } from '../../lib/plan';
+import { canAccessView, canEditInventory, canManageBills, canManageStore, ROLE_LABELS } from '../../lib/storeAccess';
 
 const Dashboard = lazy(() => import('../Dashboard'));
 const BillingPOS = lazy(() => import('../billing/BillingPOS'));
@@ -41,10 +42,11 @@ function useOnline() {
   return online;
 }
 
-function NavList({ path, go, onLogout }) {
+function NavList({ path, go, onLogout, role }) {
+  const visibleNav = NAV.filter(({ id }) => canAccessView(role, id));
   return (
     <nav className="flex-1 overflow-y-auto p-3 space-y-1" aria-label="Main">
-      {NAV.map(({ id, label, icon: Icon }) => (
+      {visibleNav.map(({ id, label, icon: Icon }) => (
         <button key={id} onClick={() => go(id)} aria-current={path === id ? 'page' : undefined}
           className={cn('w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition',
             path === id ? 'bg-brand-gradient text-white shadow-glow' : 'text-slate-300 hover:bg-white/[0.06] hover:text-white')}>
@@ -63,9 +65,16 @@ export default function TenantApp({ user, userData, path, setPath, navigate, sho
   const [editBill, setEditBill] = useState(null);
   const [activeSupplier, setActiveSupplier] = useState(null);
   const online = useOnline();
+  const role = user?.role || 'worker';
+  const visibleBottom = BOTTOM.filter((id) => canAccessView(role, id));
   const { plan, timeLeft, isUrgent } = useSubscriptionTimer(userData);
 
+  useEffect(() => {
+    if (!canAccessView(role, path)) setPath('dashboard');
+  }, [role, path, setPath]);
+
   const go = (id, extra) => {
+    if (!canAccessView(role, id)) return;
     if (id === 'billing' && !extra) setEditBill(null);
     if (id === 'purchaseEntry' || id === 'supplierLedger') setActiveSupplier(extra || null);
     setPath(id);
@@ -78,12 +87,12 @@ export default function TenantApp({ user, userData, path, setPath, navigate, sho
   const page = (() => {
     switch (path) {
       case 'billing': return <BillingPOS user={user} userData={userData} editBill={editBill} onClearEdit={() => setEditBill(null)} showToast={showToast} bills={data.bills} inventory={data.inventory} customers={data.customers} navigate={go} />;
-      case 'inventory': return <Inventory user={user} showToast={showToast} />;
-      case 'customers': return <Customers user={user} showToast={showToast} />;
-      case 'suppliers': return <Suppliers user={user} onNavigate={go} showToast={showToast} />;
-      case 'supplierLedger': return <SupplierLedger user={user} supplier={activeSupplier} onBack={() => go('suppliers')} showToast={showToast} />;
-      case 'purchaseEntry': return <PurchaseEntry user={user} preSelectedSupplier={activeSupplier} onNavigate={go} showToast={showToast} />;
-      case 'reports': return <Reports data={{ ...data, medicines: data.inventory }} onOpenBill={(bill) => { setEditBill(bill); setPath('billing'); }} />;
+      case 'inventory': return <Inventory user={user} showToast={showToast} canEdit={canEditInventory(role)} />;
+      case 'customers': return <Customers user={user} showToast={showToast} canEdit={role !== 'accountant'} canManageBills={canManageBills(role)} />;
+      case 'suppliers': return <Suppliers user={user} onNavigate={go} showToast={showToast} canEdit={canManageStore(role)} />;
+      case 'supplierLedger': return <SupplierLedger user={user} supplier={activeSupplier} onBack={() => go('suppliers')} showToast={showToast} canEdit={canManageStore(role)} />;
+      case 'purchaseEntry': return <PurchaseEntry user={user} preSelectedSupplier={activeSupplier} onNavigate={go} showToast={showToast} canEdit={canManageStore(role)} />;
+      case 'reports': return <Reports data={{ ...data, medicines: data.inventory }} role={role} onOpenBill={canManageBills(role) ? (bill) => { setEditBill(bill); setPath('billing'); } : undefined} />;
       case 'plans': return <SubscriptionPlans user={user} userData={userData} showToast={showToast} navigate={(v, p) => (v === 'public' ? navigate(v, p) : go(p === 'pos' ? 'billing' : p || 'dashboard'))} />;
       case 'referrals': return <ReferralCenter user={user} showToast={showToast} />;
       case 'settings': return <SettingsView user={user} userData={userData} data={data} showToast={showToast} />;
@@ -95,10 +104,11 @@ export default function TenantApp({ user, userData, path, setPath, navigate, sho
     <div className="flex h-dvh overflow-hidden bg-ink-950">
       <aside className="hidden lg:flex w-64 shrink-0 flex-col border-r border-white/[0.07] bg-ink-900/70 no-print">
         <div className="h-16 px-4 flex items-center border-b border-white/[0.07]"><BrandMark size="sm" /></div>
-        <NavList path={path} go={go} onLogout={onLogout} />
+        <NavList path={path} go={go} onLogout={onLogout} role={role} />
         <div className="p-4 border-t border-white/[0.07] text-xs text-slate-500">
           <div className="text-slate-300 font-semibold truncate">{storeName}</div>
           <div className="truncate">{user.email}</div>
+          <div className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-brand-sky">{ROLE_LABELS[role] || ROLE_LABELS.worker}</div>
         </div>
       </aside>
 
@@ -110,7 +120,7 @@ export default function TenantApp({ user, userData, path, setPath, navigate, sho
               <BrandMark size="sm" />
               <button onClick={() => setDrawer(false)} className="p-2 text-slate-400" aria-label="Close menu"><X size={20} /></button>
             </div>
-            <NavList path={path} go={go} onLogout={onLogout} />
+            <NavList path={path} go={go} onLogout={onLogout} role={role} />
           </div>
         </div>
       )}
@@ -130,10 +140,11 @@ export default function TenantApp({ user, userData, path, setPath, navigate, sho
               online ? 'text-brand-green border-brand-green/30 bg-brand-green/10' : 'text-amber-300 border-amber-400/30 bg-amber-400/10')}>
               {online ? <Wifi size={13} /> : <WifiOff size={13} />} {online ? 'Online' : 'Offline'}
             </span>
-            <button onClick={() => go('plans')} className={cn('text-xs font-semibold px-2.5 py-1 rounded-full border',
+            <span className="hidden sm:inline-flex rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] font-semibold text-slate-300">{ROLE_LABELS[role] || ROLE_LABELS.worker}</span>
+            {role === 'owner' && <button onClick={() => go('plans')} className={cn('text-xs font-semibold px-2.5 py-1 rounded-full border',
               isUrgent || timeLeft.isExpired ? 'text-red-300 border-red-500/40 bg-red-500/10' : 'text-slate-300 border-white/10 bg-white/[0.04]')}>
               {timeLeft.isExpired ? 'Plan expired' : `${plan.replace('7 Days Free Trial', 'Trial')} · ${timeLeft.days}d`}
-            </button>
+            </button>}
           </div>
         </header>
         {!online && (
@@ -148,7 +159,7 @@ export default function TenantApp({ user, userData, path, setPath, navigate, sho
 
       <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-ink-900/95 backdrop-blur border-t border-white/10 safe-bottom no-print" aria-label="Quick">
         <div className="grid grid-cols-5">
-          {BOTTOM.map((id) => {
+          {visibleBottom.map((id) => {
             const item = NAV.find((n) => n.id === id);
             const Icon = item.icon;
             const active = path === id;

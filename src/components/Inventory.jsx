@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
+import { storeCollection, storeDocument } from '../lib/storeAccess';
 import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { Package, Plus, Search, AlertTriangle, Trash2, Edit2, ShieldAlert } from 'lucide-react';
 
-export default function Inventory({ user }) {
+export default function Inventory({ user, canEdit = true }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -25,7 +26,7 @@ export default function Inventory({ user }) {
   // Firebase Realtime Listener
   useEffect(() => {
     if (!user?.uid) return;
-    const unsubscribe = onSnapshot(collection(db, 'users', user.uid, 'inventory'), (snapshot) => {
+    const unsubscribe = onSnapshot(storeCollection(user.storeId, 'inventory'), (snapshot) => {
       const itemsList = [];
       snapshot.forEach((doc) => {
         itemsList.push({ id: doc.id, ...doc.data() });
@@ -55,9 +56,9 @@ export default function Inventory({ user }) {
       };
 
       if (editItemId) {
-        await updateDoc(doc(db, 'users', user.uid, 'inventory', editItemId), payload);
+        await updateDoc(storeDocument(user.storeId, 'inventory', editItemId), payload);
       } else {
-        await addDoc(collection(db, 'users', user.uid, 'inventory'), {
+        await addDoc(storeCollection(user.storeId, 'inventory'), {
           ...payload,
           createdAt: serverTimestamp()
         });
@@ -90,7 +91,7 @@ export default function Inventory({ user }) {
   const handleDelete = async (id) => {
     if (window.confirm("Are you sure you want to delete this medicine?")) {
       try {
-        await deleteDoc(doc(db, 'users', user.uid, 'inventory', id));
+        await deleteDoc(storeDocument(user.storeId, 'inventory', id));
       } catch (err) {
         console.error(err);
       }
@@ -142,12 +143,12 @@ export default function Inventory({ user }) {
               onChange={e => setSearchTerm(e.target.value)}
             />
           </div>
-          <button 
+          {canEdit && <button
             onClick={() => { setEditItemId(null); setFormData({ name: '', hsn: '', batchNo: '', expiryDate: '', qty: '', rate: '', mrp: '', gstPercent: 12 }); setShowModal(true); }}
             className="flex items-center bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg font-bold shadow-md transition-colors shrink-0"
           >
             <Plus size={18} className="mr-2"/> Add Medicine
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -195,14 +196,14 @@ export default function Inventory({ user }) {
                       <td className="p-4 text-right font-bold text-white">₹{Number(item.mrp).toFixed(2)}</td>
                       <td className="p-4 text-center font-semibold">{item.gstPercent}%</td>
                       <td className="p-4 text-center">
-                        <div className="flex items-center justify-center gap-2">
-                          <button onClick={() => handleEdit(item)} className="text-blue-400 hover:text-blue-300 p-1.5 rounded hover:bg-slate-700">
+                        {canEdit ? <div className="flex items-center justify-center gap-2">
+                          <button type="button" onClick={() => handleEdit(item)} aria-label={`Edit ${item.name}`} className="text-blue-400 hover:text-blue-300 p-1.5 rounded hover:bg-slate-700">
                             <Edit2 size={16} />
                           </button>
-                          <button onClick={() => handleDelete(item.id)} className="text-red-400 hover:text-red-300 p-1.5 rounded hover:bg-slate-700">
+                          <button type="button" onClick={() => handleDelete(item.id)} aria-label={`Delete ${item.name}`} className="text-red-400 hover:text-red-300 p-1.5 rounded hover:bg-slate-700">
                             <Trash2 size={16} />
                           </button>
-                        </div>
+                        </div> : <span className="text-xs text-slate-500">View only</span>}
                       </td>
                     </tr>
                   );
@@ -214,7 +215,7 @@ export default function Inventory({ user }) {
       </div>
 
       {/* ADD / EDIT MEDICINE MODAL */}
-      {showModal && (
+      {canEdit && showModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-slate-800 border border-slate-600 rounded-xl w-full max-w-lg shadow-2xl overflow-hidden">
             <div className="p-5 border-b border-slate-700 flex justify-between items-center bg-slate-900">

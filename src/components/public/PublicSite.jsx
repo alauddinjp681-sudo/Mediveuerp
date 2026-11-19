@@ -1,9 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { createUserWithEmailAndPassword, sendPasswordResetEmail, signInWithEmailAndPassword } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
-import { doc, setDoc } from 'firebase/firestore';
 import { Receipt, Package, WifiOff, Smartphone, LayoutTemplate, BarChart3, ShieldCheck, Users, Check, ArrowRight, Menu, X, Phone, Mail, Download, LockKeyhole, Sparkles } from 'lucide-react';
-import { auth, db, functions } from '../../firebase';
+import { auth, functions } from '../../firebase';
 import { BrandMark, Button, Card, Field, cn } from '../ui';
 
 const FEATURES = [
@@ -261,19 +260,24 @@ function ForgotPassword({ setTab, showToast }) {
 }
 
 function Register({ setTab, showToast }) {
-  const [form, setForm] = useState({ storeName: '', phone: '', email: '', password: '' });
+  const [form, setForm] = useState({ storeName: '', phone: '', email: '', password: '', invitationCode: '' });
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true);
+    const registration = {
+      storeName: form.storeName.trim(),
+      phone: form.phone.trim(),
+      invitationCode: form.invitationCode.trim(),
+    };
+    sessionStorage.setItem('mediveu-registration', JSON.stringify(registration));
     try {
-      const res = await createUserWithEmailAndPassword(auth, form.email.trim(), form.password);
-      await Promise.all([
-        setDoc(doc(db, 'users', res.user.uid), { email: form.email.trim(), status: 'Active', plan: '7 Days Free Trial', createdAt: Date.now() }),
-        setDoc(doc(db, 'users', res.user.uid, 'settings', 'general'), { storeName: form.storeName.trim(), phone: form.phone, address: '', gstin: '', dlNumber: '' }),
-      ]);
+      await createUserWithEmailAndPassword(auth, form.email.trim(), form.password);
+      const ensureStore = httpsCallable(functions, 'ensureStore');
+      await ensureStore({ invitationCode: registration.invitationCode, registration });
+      sessionStorage.removeItem('mediveu-registration');
       const referrerUid = new URLSearchParams(window.location.search).get('ref');
       if (referrerUid) {
         try {
@@ -295,7 +299,8 @@ function Register({ setTab, showToast }) {
   return (
     <AuthCard title="Create your store account" subtitle="7 days free. No card required.">
       <form onSubmit={submit} className="space-y-4">
-        <Field label="Store Name" value={form.storeName} onChange={set('storeName')} required />
+        <Field label="Store invitation code (optional)" value={form.invitationCode} onChange={set('invitationCode')} autoComplete="off" placeholder="Paste the code shared by your store owner" />
+        <Field label="Store Name" value={form.storeName} onChange={set('storeName')} required={!form.invitationCode.trim()} placeholder={form.invitationCode.trim() ? 'Not needed when joining a store' : ''} />
         <Field label="Mobile" type="tel" inputMode="tel" value={form.phone} onChange={set('phone')} />
         <Field label="Email" type="email" value={form.email} onChange={set('email')} required autoComplete="email" />
         <Field label="Password" type="password" minLength={6} value={form.password} onChange={set('password')} required autoComplete="new-password" />

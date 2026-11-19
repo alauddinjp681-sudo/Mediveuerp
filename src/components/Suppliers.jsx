@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
+import { storeCollection } from '../lib/storeAccess';
 import { collection, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
 import { Truck, Plus, FileText, Search, ShoppingCart } from 'lucide-react';
 
-export default function Suppliers({ user, onNavigate }) {
+export default function Suppliers({ user, onNavigate, canEdit = true }) {
   const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -15,7 +16,7 @@ export default function Suppliers({ user, onNavigate }) {
   // Firebase se Suppliers fetch karna
   useEffect(() => {
     if (!user?.uid) return;
-    const unsubscribe = onSnapshot(collection(db, 'users', user.uid, 'suppliers'), (snapshot) => {
+    const unsubscribe = onSnapshot(storeCollection(user.storeId, 'suppliers'), (snapshot) => {
       const suppData = [];
       snapshot.forEach(doc => suppData.push({ id: doc.id, ...doc.data() }));
       setSuppliers(suppData);
@@ -29,7 +30,7 @@ export default function Suppliers({ user, onNavigate }) {
     e.preventDefault();
     if (!newSupplier.name) return alert("Supplier Name is required");
     try {
-      await addDoc(collection(db, 'users', user.uid, 'suppliers'), {
+      await addDoc(storeCollection(user.storeId, 'suppliers'), {
         ...newSupplier,
         createdAt: serverTimestamp()
       });
@@ -69,9 +70,9 @@ export default function Suppliers({ user, onNavigate }) {
               onChange={e => setSearchTerm(e.target.value)}
             />
           </div>
-          <button onClick={() => setShowAddModal(true)} className="flex items-center bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-lg font-bold shadow-md transition-colors shrink-0">
+          {canEdit && <button onClick={() => setShowAddModal(true)} className="flex items-center bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-lg font-bold shadow-md transition-colors shrink-0">
             <Plus size={18} className="mr-2"/> Add Supplier
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -101,12 +102,12 @@ export default function Suppliers({ user, onNavigate }) {
                     <td className="p-4">
                       <div className="flex justify-center gap-2">
                         {/* 🔥 LINK 1: Purchase Bill Entry - Jab next file banegi toh ye wahan le jayega 🔥 */}
-                        <button 
+                        {canEdit && <button
                           onClick={() => onNavigate && onNavigate('purchaseEntry', supp)} 
                           className="flex items-center justify-center bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 px-3 py-1.5 rounded border border-blue-500/20 font-bold transition-colors text-xs"
                         >
                           <ShoppingCart size={14} className="mr-1"/> Add Purchase Bill
-                        </button>
+                        </button>}
 
                         {/* 🔥 LINK 2: Supplier Ledger (Khata) 🔥 */}
                         <button 
@@ -126,7 +127,7 @@ export default function Suppliers({ user, onNavigate }) {
       </div>
 
       {/* ADD SUPPLIER MODAL */}
-      {showAddModal && (
+      {canEdit && showAddModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-slate-800 border border-slate-600 rounded-xl w-full max-w-md shadow-2xl overflow-hidden">
             <div className="p-5 border-b border-slate-700 flex justify-between items-center bg-slate-900">
