@@ -6,10 +6,13 @@ import { Users, Plus, FileText, Search } from 'lucide-react';
 
 // 🔥 YAHAN HUMNE NAYI FILE KO LINK KIYA HAI 🔥
 import CustomerLedger from './CustomerLedger';
+import { readableFirebaseError } from '../lib/firebaseError';
 
-export default function Customers({ user, canEdit = true }) {
+export default function Customers({ user, canEdit = true, showToast }) {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [retryKey, setRetryKey] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
   
   // 🔥 LINKING STATE: Jab ye set hoga, tab Khata khulega 🔥
@@ -21,15 +24,20 @@ export default function Customers({ user, canEdit = true }) {
 
   // Firebase se Customers fetch karna
   useEffect(() => {
-    if (!user?.uid) return;
+    if (!user?.uid || !user?.storeId) return undefined;
+    setLoading(true);
+    setLoadError('');
     const unsubscribe = onSnapshot(storeCollection(user.storeId, 'customers'), (snapshot) => {
       const custData = [];
       snapshot.forEach(doc => custData.push({ id: doc.id, ...doc.data() }));
       setCustomers(custData);
       setLoading(false);
+    }, (error) => {
+      setLoadError(readableFirebaseError(error, 'Customer records could not be loaded.'));
+      setLoading(false);
     });
     return () => unsubscribe();
-  }, [user]);
+  }, [user?.uid, user?.storeId, retryKey]);
 
   // Naya customer save karna
   const handleAddCustomer = async (e) => {
@@ -42,8 +50,9 @@ export default function Customers({ user, canEdit = true }) {
       });
       setShowAddModal(false);
       setNewCustomer({ name: '', phone: '', gstin: '', address: '' });
+      showToast?.('Customer added');
     } catch (error) {
-      console.error("Error adding customer", error);
+      showToast?.(readableFirebaseError(error, 'Customer could not be added.'), 'error');
     }
   };
 
@@ -53,6 +62,7 @@ export default function Customers({ user, canEdit = true }) {
       <CustomerLedger 
         user={user}
         canEdit={user.role !== 'accountant'}
+        showToast={showToast}
         customer={selectedCustomerForLedger} 
         onBack={() => setSelectedCustomerForLedger(null)} 
       />
@@ -61,7 +71,7 @@ export default function Customers({ user, canEdit = true }) {
 
   // SEARCH FILTER
   const filteredCustomers = customers.filter(c => 
-    c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    (c.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (c.phone && c.phone.includes(searchTerm))
   );
 
@@ -106,6 +116,8 @@ export default function Customers({ user, canEdit = true }) {
             <tbody className="divide-y divide-slate-700/50">
               {loading ? (
                 <tr><td colSpan="4" className="p-8 text-center text-slate-500 font-bold">Loading Customers...</td></tr>
+              ) : loadError ? (
+                <tr><td colSpan="4" role="alert" className="p-8 text-center text-red-300 font-semibold">{loadError} <button type="button" onClick={() => setRetryKey((key) => key + 1)} className="ml-2 text-brand-sky underline">Retry</button></td></tr>
               ) : filteredCustomers.length === 0 ? (
                 <tr><td colSpan="4" className="p-8 text-center text-slate-500 font-bold">No customers found. Add a new customer to start.</td></tr>
               ) : (

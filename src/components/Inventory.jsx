@@ -3,10 +3,13 @@ import { db } from '../firebase';
 import { storeCollection, storeDocument } from '../lib/storeAccess';
 import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { Package, Plus, Search, AlertTriangle, Trash2, Edit2, ShieldAlert } from 'lucide-react';
+import { readableFirebaseError } from '../lib/firebaseError';
 
-export default function Inventory({ user, canEdit = true }) {
+export default function Inventory({ user, canEdit = true, showToast }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [retryKey, setRetryKey] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
   
   // Modals & Form States
@@ -25,17 +28,17 @@ export default function Inventory({ user, canEdit = true }) {
 
   // Firebase Realtime Listener
   useEffect(() => {
-    if (!user?.uid) return;
-    const unsubscribe = onSnapshot(storeCollection(user.storeId, 'inventory'), (snapshot) => {
-      const itemsList = [];
-      snapshot.forEach((doc) => {
-        itemsList.push({ id: doc.id, ...doc.data() });
-      });
-      setItems(itemsList);
+    if (!user?.uid || !user?.storeId) return undefined;
+    setLoading(true);
+    setLoadError('');
+    return onSnapshot(storeCollection(user.storeId, 'inventory'), (snapshot) => {
+      setItems(snapshot.docs.map((document) => ({ id: document.id, ...document.data() })));
+      setLoading(false);
+    }, (error) => {
+      setLoadError(readableFirebaseError(error, 'Inventory could not be loaded.'));
       setLoading(false);
     });
-    return () => unsubscribe();
-  }, [user]);
+  }, [user?.uid, user?.storeId, retryKey]);
 
   // Form Submit (Add ya Edit)
   const handleSubmit = async (e) => {
@@ -67,9 +70,8 @@ export default function Inventory({ user, canEdit = true }) {
       setShowModal(false);
       setEditItemId(null);
       setFormData({ name: '', hsn: '', batchNo: '', expiryDate: '', qty: '', rate: '', mrp: '', gstPercent: 12 });
-    } catch (err) {
-      console.error("Inventory error:", err);
-      alert("Error saving item to inventory.");
+    } catch (error) {
+      showToast?.(readableFirebaseError(error, 'Inventory item could not be saved.'), 'error');
     }
   };
 
@@ -92,8 +94,8 @@ export default function Inventory({ user, canEdit = true }) {
     if (window.confirm("Are you sure you want to delete this medicine?")) {
       try {
         await deleteDoc(storeDocument(user.storeId, 'inventory', id));
-      } catch (err) {
-        console.error(err);
+      } catch (error) {
+        showToast?.(readableFirebaseError(error, 'Inventory item could not be deleted.'), 'error');
       }
     }
   };
@@ -171,6 +173,8 @@ export default function Inventory({ user, canEdit = true }) {
             <tbody className="divide-y divide-slate-700/50 text-sm">
               {loading ? (
                 <tr><td colSpan="8" className="p-8 text-center text-slate-500 font-bold">Loading Inventory...</td></tr>
+              ) : loadError ? (
+                <tr><td colSpan="8" role="alert" className="p-8 text-center text-red-300">{loadError} <button type="button" onClick={() => setRetryKey((key) => key + 1)} className="ml-2 text-brand-sky underline">Retry</button></td></tr>
               ) : filteredItems.length === 0 ? (
                 <tr><td colSpan="8" className="p-8 text-center text-slate-500 font-bold">No medicines found. Click "Add Medicine" to add stock.</td></tr>
               ) : (

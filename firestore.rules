@@ -67,11 +67,12 @@ service cloud.firestore {
       match /{collectionName}/{documentId} {
         function roleCanRead() {
           return isStoreMember(storeId)
-            && (collectionName != 'invitations')
-            && (collectionName != 'members')
+            && collectionName in ['settings', 'inventory', 'bills', 'customers', 'suppliers', 'purchases', 'transactions', 'supplier_transactions', 'payments']
+            && (collectionName != 'suppliers' || hasRole(storeId, ['owner', 'manager', 'accountant']))
             && (collectionName != 'transactions' || hasRole(storeId, ['owner', 'manager', 'accountant']))
             && (collectionName != 'supplier_transactions' || hasRole(storeId, ['owner', 'manager', 'accountant']))
-            && (collectionName != 'purchases' || hasRole(storeId, ['owner', 'manager', 'accountant']));
+            && (collectionName != 'purchases' || isOwnerOrManager(storeId))
+            && (collectionName != 'payments' || isOwnerOrManager(storeId));
         }
 
         function roleCanCreate() {
@@ -121,12 +122,24 @@ service cloud.firestore {
 
         allow read: if roleCanRead();
         allow create: if roleCanCreate();
-        allow update: if roleCanUpdate();
+        allow update: if roleCanUpdate()
+          && (collectionName != 'inventory' || request.resource.data.get('qty', 0) >= 0)
+          && (collectionName != 'bills' || (
+            request.resource.data.get('revision', 0) == resource.data.get('revision', 0) + 1
+            && request.resource.data.get('createdBy', request.auth.uid) == resource.data.get('createdBy', request.auth.uid)
+            && (resource.data.get('status', 'final') == 'draft' || request.resource.data.status == 'final')
+          ));
         allow delete: if roleCanDelete();
 
         match /events/{eventId} {
           allow read: if isStoreMember(storeId);
-          allow create: if hasRole(storeId, ['owner', 'manager', 'worker']);
+          allow create: if collectionName == 'bills'
+            && hasRole(storeId, ['owner', 'manager', 'worker'])
+            && request.resource.data.actorUid == request.auth.uid
+            && request.resource.data.actorRole == get(memberPath(storeId, request.auth.uid)).data.role
+            && request.resource.data.changedAt == request.time
+            && getAfter(/databases/$(database)/documents/stores/$(storeId)/bills/$(documentId)).data.updatedAt == request.time
+            && getAfter(/databases/$(database)/documents/stores/$(storeId)/bills/$(documentId)).data.lastEditedBy == request.auth.uid;
           allow update, delete: if false;
         }
       }

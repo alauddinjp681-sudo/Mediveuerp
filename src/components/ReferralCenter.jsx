@@ -4,13 +4,14 @@ import { httpsCallable } from 'firebase/functions';
 import useSWR from 'swr';
 import { Check, Copy, Gift, Share2, Users, WalletCards } from 'lucide-react';
 import { functions } from '../firebase';
+import { readableFirebaseError } from '../lib/firebaseError';
 import { Badge, Button, Card, PageHeader } from './ui';
 
 export default function ReferralCenter({ user, showToast }) {
   const [copied, setCopied] = useState(false);
   const inviteOrigin = import.meta.env.VITE_APP_URL || (Capacitor.isNativePlatform() ? 'https://www.mediveu.site' : window.location.origin);
   const inviteUrl = useMemo(() => `${inviteOrigin}/?ref=${encodeURIComponent(user.uid)}#register`, [inviteOrigin, user.uid]);
-  const { data, error, isLoading } = useSWR(
+  const { data, error, isLoading, mutate } = useSWR(
     user?.uid ? ['referral-dashboard', user.uid] : null,
     () => httpsCallable(functions, 'getReferralDashboard')({}).then((result) => result.data),
     { refreshInterval: 30000, revalidateOnFocus: true },
@@ -84,7 +85,10 @@ export default function ReferralCenter({ user, showToast }) {
           <Badge tone="info"><Users size={13} /> {referrals.length} invited</Badge>
         </div>
         {error ? (
-          <p role="alert" className="p-5 text-sm text-red-300">Referral activity could not be loaded. Refresh this page and try again.</p>
+          <div role="alert" className="p-5 text-sm text-red-300">
+            <p>{readableFirebaseError(error, 'Referral activity could not be loaded.')}</p>
+            <button type="button" onClick={() => mutate()} className="mt-2 text-brand-sky underline">Retry</button>
+          </div>
         ) : isLoading ? (
           <p role="status" className="p-5 text-sm text-slate-400">Loading referral activity…</p>
         ) : sortedReferrals.length ? (

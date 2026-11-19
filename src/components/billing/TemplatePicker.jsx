@@ -33,7 +33,7 @@ export default function TemplatePicker({ isOpen, onClose, value, onChange, accen
               className={cn('group text-left rounded-xl border p-2 transition bg-ink-950', active ? 'border-brand-sky ring-2 ring-brand-sky/30' : 'border-white/10 hover:border-white/30')}
             >
               <div className="relative h-[220px] overflow-hidden rounded-lg bg-slate-200 flex justify-center">
-                <div className="pointer-events-none" style={{ width: t.width, transform: `scale(${scale})`, transformOrigin: 'top center' }} aria-hidden="true">
+                <div className="pointer-events-none shrink-0" style={{ width: t.width, transform: `scale(${scale})`, transformOrigin: 'top center' }} aria-hidden="true">
                   <Component doc={{ ...sampleDoc, options: { ...sampleDoc.options, accent } }} />
                 </div>
                 {active && (

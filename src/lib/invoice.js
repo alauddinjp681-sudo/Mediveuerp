@@ -71,7 +71,8 @@ export function calcTotals(items, { taxMode = 'intra', extraDiscount = 0, roundO
 
 export function nextInvoiceNumber(bills, prefix = 'INV') {
   const year = new Date().getFullYear().toString().slice(2);
-  const pattern = new RegExp(`^${prefix}-${year}-(\\d+)$`);
+  const literalPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(`^${literalPrefix}-${year}-(\\d+)$`);
   const max = bills.reduce((acc, b) => {
     const m = String(b.invoiceDetails?.invoiceNumber || '').match(pattern);
     return m ? Math.max(acc, Number(m[1])) : acc;

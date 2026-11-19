@@ -5,6 +5,7 @@ import { Copy, KeyRound, RefreshCw, Users } from 'lucide-react';
 import { db, functions } from '../firebase';
 import { storeCollection } from '../lib/storeAccess';
 import { Button, Card, Field } from './ui';
+import { readableFirebaseError } from '../lib/firebaseError';
 
 const roles = [
   { id: 'manager', label: 'Manager' },
@@ -18,13 +19,18 @@ export default function TeamAccess({ user, showToast }) {
   const [role, setRole] = useState('worker');
   const [invite, setInvite] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
     if (!user?.storeId || user.role !== 'owner') return undefined;
+    setLoadError('');
     return onSnapshot(storeCollection(user.storeId, 'members'), (snapshot) => {
       setMembers(snapshot.docs.map((document) => ({ id: document.id, ...document.data() })));
-    }, () => showToast('Team membership could not be loaded', 'error'));
-  }, [user?.storeId, user?.role, showToast]);
+    }, (error) => {
+      setLoadError(readableFirebaseError(error, 'Team membership could not be loaded.'));
+    });
+  }, [user?.storeId, user?.role, showToast, retryKey]);
 
   const createInvite = async () => {
     if (!email.trim()) return showToast('Enter the teammate’s email address', 'error');
@@ -36,7 +42,7 @@ export default function TeamAccess({ user, showToast }) {
       setEmail('');
       showToast('Invitation code created. Share it only with the invited email.');
     } catch (error) {
-      showToast(error?.message || 'Could not create invitation', 'error');
+      showToast(readableFirebaseError(error, 'Could not create invitation.'), 'error');
     } finally {
       setBusy(false);
     }
@@ -49,7 +55,7 @@ export default function TeamAccess({ user, showToast }) {
       await changeMemberRole({ memberUid, role: nextRole });
       showToast('Team permissions updated');
     } catch (error) {
-      showToast(error?.message || 'Could not update team role', 'error');
+      showToast(readableFirebaseError(error, 'Could not update team role.'), 'error');
     } finally {
       setBusy(false);
     }
@@ -104,8 +110,9 @@ export default function TeamAccess({ user, showToast }) {
           </div>
           <RefreshCw size={16} className="text-slate-500" aria-hidden="true" />
         </div>
+        {loadError && <p role="alert" className="mb-3 text-sm text-red-300">{loadError} <button type="button" onClick={() => setRetryKey((key) => key + 1)} className="text-brand-sky underline">Retry</button></p>}
         <div className="divide-y divide-white/[0.06]">
-          {members.map((member) => (
+          {!loadError && members.map((member) => (
             <div key={member.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium text-white">{member.email || member.id}</p>
@@ -123,7 +130,7 @@ export default function TeamAccess({ user, showToast }) {
               )}
             </div>
           ))}
-          {!members.length && <p className="py-4 text-sm text-slate-500">No team members yet.</p>}
+          {!loadError && !members.length && <p className="py-4 text-sm text-slate-500">No team members yet.</p>}
         </div>
       </div>
     </Card>

@@ -7,12 +7,12 @@ export const ROLE_LABELS = {
   owner: 'Owner',
   manager: 'Manager',
   worker: 'Worker / Staff',
-  accountant: 'Accountant',
+  accountant: 'Accountant / Client (read-only)',
 };
 
 export const ROLE_VIEWS = {
-  owner: ['dashboard', 'billing', 'inventory', 'customers', 'suppliers', 'purchaseEntry', 'reports', 'plans', 'referrals', 'settings'],
-  manager: ['dashboard', 'billing', 'inventory', 'customers', 'suppliers', 'purchaseEntry', 'reports', 'referrals', 'settings'],
+  owner: ['dashboard', 'billing', 'inventory', 'customers', 'suppliers', 'supplierLedger', 'purchaseEntry', 'reports', 'plans', 'referrals', 'settings'],
+  manager: ['dashboard', 'billing', 'inventory', 'customers', 'suppliers', 'supplierLedger', 'purchaseEntry', 'reports', 'referrals', 'settings'],
   worker: ['dashboard', 'billing', 'inventory', 'customers'],
   accountant: ['dashboard', 'billing', 'customers', 'suppliers', 'supplierLedger', 'reports'],
 };
