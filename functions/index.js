@@ -321,11 +321,17 @@ const SETUP_STAGE_LABELS = {
 };
 
 function setupError(stage, error, extra = {}) {
-  if (error instanceof HttpsError) {
-    return new HttpsError(error.code, error.message, { stage, retryable: error.code !== 'permission-denied', ...(error.details || {}), ...extra });
-  }
-  const rawCode = String(error?.code ?? '');
   const reason = String(error?.message || error || 'Unknown error').slice(0, 300);
+  if (error instanceof HttpsError) {
+    return new HttpsError(error.code, error.message, {
+      stage,
+      retryable: error.code !== 'permission-denied',
+      ...(error.details || {}),
+      ...(error.details?.reason ? {} : { reason }),
+      ...extra,
+    });
+  }
+  const rawCode = String(error?.code ?? '').toLowerCase();
   const permission = rawCode === '7' || /permission|PERMISSION_DENIED/i.test(rawCode + reason);
   const busy = ['4', '10', '14', 'aborted', 'unavailable', 'deadline-exceeded'].includes(rawCode)
     || /deadline|unavailable|contention|aborted/i.test(reason);
@@ -381,8 +387,13 @@ async function runEnsureStore(request, setStage) {
     if (!memberSnap?.exists || memberSnap.get('status') !== 'active') {
       throw new HttpsError('permission-denied', 'Your store membership is not active. Ask the store owner to re-invite you.');
     }
-    if (userData.pendingInvitationCode || userData.migrationStatus !== 'complete') {
-      await userRef.set({ pendingInvitationCode: FieldValue.delete(), migrationStatus: 'complete', migrationError: FieldValue.delete() }, { merge: true });
+    if (userData.pendingInvitationCode || userData.migrationStatus !== 'complete' || userData.migrationError || userData.migrationFailedAt) {
+      await userRef.set({
+        pendingInvitationCode: FieldValue.delete(),
+        migrationStatus: 'complete',
+        migrationError: FieldValue.delete(),
+        migrationFailedAt: FieldValue.delete(),
+      }, { merge: true });
     }
     return { storeId: userData.storeId, role: memberSnap.get('role'), migrationStatus: 'complete' };
   }
@@ -408,6 +419,8 @@ async function runEnsureStore(request, setStage) {
       ...profile,
       migrationStoreId: uid,
       migrationStatus: 'in_progress',
+      migrationError: FieldValue.delete(),
+      migrationFailedAt: FieldValue.delete(),
       pendingInvitationCode: FieldValue.delete(),
     }, { merge: true });
   });
@@ -418,7 +431,15 @@ async function runEnsureStore(request, setStage) {
     setStage('membership');
     let memberSnap = await db.doc(`stores/${userData.storeId}/members/${uid}`).get();
     if (!memberSnap.exists) memberSnap = await ensureOwnerMembership(db, uid, authEmail || userData.email, userData.storeId);
-    if (!memberSnap?.exists) throw new HttpsError('failed-precondition', 'Store membership is not ready yet. Press Retry setup.');
+    if (!memberSnap?.exists || memberSnap.get('status') !== 'active') {
+      throw new HttpsError('failed-precondition', 'Store membership is not ready yet. Press Retry setup.');
+    }
+    await userRef.set({
+      migrationStatus: 'complete',
+      migrationError: FieldValue.delete(),
+      migrationFailedAt: FieldValue.delete(),
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
     return { storeId: userData.storeId, role: memberSnap.get('role'), migrationStatus: 'complete' };
   }
 
@@ -436,6 +457,8 @@ async function runEnsureStore(request, setStage) {
     subscriptionEndsAt: userData.subscriptionEndsAt || null,
     createdAt: storeSnap.exists ? (storeSnap.get('createdAt') || FieldValue.serverTimestamp()) : FieldValue.serverTimestamp(),
     migrationStatus: 'in_progress',
+    migrationError: FieldValue.delete(),
+    migrationFailedAt: FieldValue.delete(),
   };
   await storeRef.set(storeDefaults, { merge: true });
   if (!legacySettings.exists) {
@@ -494,6 +517,8 @@ async function runEnsureStore(request, setStage) {
       role: 'owner',
       migrationStoreId: FieldValue.delete(),
       migrationStatus: 'complete',
+      migrationError: FieldValue.delete(),
+      migrationFailedAt: FieldValue.delete(),
       migrationCompletedAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true });

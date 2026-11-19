@@ -6,6 +6,8 @@
 #   ANDROID_KEYSTORE_PASSWORD  keystore (store) password
 #   ANDROID_KEY_ALIAS          alias of the signing key inside the keystore
 #   ANDROID_KEY_PASSWORD       password of that key (often the same as the store password)
+# Keep using the same release keystore and alias for every update; changing them can make
+# Play Store reject updates because the signing certificate no longer matches the app.
 
 name: Build signed Android releases
 
@@ -108,7 +110,13 @@ jobs:
             echo "::error title=Keystore check failed::Could not open the keystore with ANDROID_KEYSTORE_PASSWORD, or alias '$ANDROID_KEY_ALIAS' does not exist in it."
             exit 1
           fi
+          expected_fingerprint="$(keytool -list -v -keystore "$keystore_path" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" | awk -F'SHA256: ' '/SHA256: / { gsub(":", "", $2); print toupper($2); exit }')"
+          if [ -z "$expected_fingerprint" ]; then
+            echo "::error title=Keystore check failed::Could not read the SHA-256 signing certificate fingerprint for ANDROID_KEY_ALIAS."
+            exit 1
+          fi
           echo "ANDROID_KEYSTORE_PATH=$keystore_path" >> "$GITHUB_ENV"
+          echo "ANDROID_RELEASE_CERT_SHA256=$expected_fingerprint" >> "$GITHUB_ENV"
 
       - name: Build signed release APK and Play Store AAB
         working-directory: android
@@ -139,10 +147,21 @@ jobs:
             echo "::error title=Android SDK tool missing::Could not find apksigner at $apksigner. Check the Android SDK build-tools installation."
             exit 1
           fi
-          echo "Verifying APK signature..."
-          "$apksigner" verify --verbose --print-certs "$apk"
-          echo "Verifying AAB JAR signature..."
+          echo "Verifying APK signature and release certificate..."
+          apk_signer_output="$("$apksigner" verify --verbose --print-certs "$apk")"
+          printf '%s\n' "$apk_signer_output"
+          apk_fingerprint="$(printf '%s\n' "$apk_signer_output" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ { print toupper($2); exit }' | tr -d ':')"
+          if [ -z "$apk_fingerprint" ] || [ "$apk_fingerprint" != "$ANDROID_RELEASE_CERT_SHA256" ]; then
+            echo "::error title=APK signing certificate mismatch::The APK was not signed with the configured release keystore and alias."
+            exit 1
+          fi
+          echo "Verifying AAB signature and release certificate..."
           jarsigner -verify "$aab"
+          aab_fingerprint="$(keytool -printcert -jarfile "$aab" | awk -F'SHA256: ' '/SHA256: / { gsub(":", "", $2); print toupper($2); exit }')"
+          if [ -z "$aab_fingerprint" ] || [ "$aab_fingerprint" != "$ANDROID_RELEASE_CERT_SHA256" ]; then
+            echo "::error title=AAB signing certificate mismatch::The AAB was not signed with the configured release keystore and alias."
+            exit 1
+          fi
 
       - name: Upload signed release APK
         uses: actions/upload-artifact@v4

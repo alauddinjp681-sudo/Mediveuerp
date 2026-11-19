@@ -81,9 +81,17 @@ export default function App() {
     if (!user || view !== 'tenant') return undefined;
     let active = true;
     const unsubs = [];
-    const onErr = (label) => (error) => console.error(`Listener ${label} failed`, error);
+    const onErr = (label) => (error) => {
+      console.error(`Listener ${label} failed`, error);
+      if (!active) return;
+      const described = describeSetupError(error);
+      setStoreSetupError({ ...described, title: `Could not load ${label}`, retryable: true });
+    };
 
-    const accessError = (message) => ({ code: 'permission-denied', title: 'Store access unavailable', message, technical: '', retryable: true });
+    const accessError = (error, message) => {
+      const described = describeSetupError(error);
+      return { ...described, title: 'Store access unavailable', message: message || described.message, retryable: true };
+    };
 
     const callEnsureStore = async (payload) => {
       const ensureStore = httpsCallable(functions, 'ensureStore', { timeout: 540000 });
@@ -123,10 +131,10 @@ export default function App() {
           if (!active) return;
           const member = snapshot.data();
           if (member?.status === 'active' && ['owner','manager','worker','accountant'].includes(member.role)) setMembership(member);
-          else { setMembership(null); setStoreSetupError(accessError('Your store membership is not active. Contact the store owner.')); }
+          else { setMembership(null); setStoreSetupError(accessError(null, 'Your store membership is not active. Contact the store owner.')); }
         }, (error) => {
           console.error('Membership listener failed', error);
-          if (active) { setMembership(null); setStoreSetupError(accessError('Your store access could not be verified. Firestore rules may not be deployed yet.')); }
+          if (active) { setMembership(null); setStoreSetupError(accessError(error)); }
         }));
         unsubs.push(onSnapshot(doc(db, 'stores', storeId), (snapshot) => setStoreData(snapshot.exists() ? snapshot.data() : null), onErr('store')));
         unsubs.push(onSnapshot(storeCollection(storeId, 'settings'), (snapshot) => {
