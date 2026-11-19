@@ -121,7 +121,7 @@ export default function TenantApp({ user = {}, userData = {}, path = 'dashboard'
           <div className="text-slate-300 font-semibold truncate">{storeName}</div>
           <div className="truncate">{user.email}</div>
           <span className="mt-2 inline-flex rounded-full border border-brand-sky/25 bg-brand-sky/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-brand-sky">{ROLE_LABELS[role] || ROLE_LABELS.worker}</span>
-          {!showViewToggle && <button type="button" onClick={() => { onShowViewToggle(); setDrawer(false); }} className="mt-3 block text-xs font-semibold text-slate-300 hover:text-white">Show view toggle</button>}
+              <button type="button" aria-pressed={showViewToggle} onClick={() => { (showViewToggle ? onHideViewToggle : onShowViewToggle)(); setDrawer(false); }} className="mt-3 block text-xs font-semibold text-slate-300 hover:text-white">{showViewToggle ? 'Hide view switcher' : 'Show view switcher'}</button>
         </div>
       </aside>
 
@@ -138,7 +138,7 @@ export default function TenantApp({ user = {}, userData = {}, path = 'dashboard'
               <div className="truncate font-semibold text-white">{storeName}</div>
               <div className="mt-1 truncate">{user.email}</div>
               <span className="mt-2 inline-flex rounded-full border border-brand-sky/25 bg-brand-sky/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-brand-sky">{ROLE_LABELS[role] || ROLE_LABELS.worker}</span>
-              {!showViewToggle && <button type="button" onClick={() => { onShowViewToggle(); setDrawer(false); }} className="mt-3 block text-xs font-semibold text-slate-300 hover:text-white">Show view toggle</button>}
+              <button type="button" aria-pressed={showViewToggle} onClick={() => { (showViewToggle ? onHideViewToggle : onShowViewToggle)(); setDrawer(false); }} className="mt-3 block text-xs font-semibold text-slate-300 hover:text-white">{showViewToggle ? 'Hide view switcher' : 'Show view switcher'}</button>
             </div>
           </div>
         </div>

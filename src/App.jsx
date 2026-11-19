@@ -1,13 +1,13 @@
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { Monitor, Smartphone, X } from 'lucide-react';
+import { Eye, Monitor, Smartphone, X } from 'lucide-react';
 import { collection, doc, onSnapshot } from 'firebase/firestore';
 import { auth, db, firebaseConfigError } from './firebase';
 import { storeCollection, storeDocument } from './lib/storeAccess';
 import { setupStoreForUser } from './lib/storeSetup';
 import { describeSetupError } from './lib/setupError';
 import { readableFirebaseError } from './lib/firebaseError';
-import { sessionStore } from './lib/sessionStore';
+import { persistentStore, sessionStore } from './lib/sessionStore';
 import { Toast, Spinner, BrandMark } from './components/ui';
 import PublicSite from './components/public/PublicSite';
 import StoreSetupError from './components/StoreSetupError';
@@ -39,7 +39,13 @@ function AuthenticatedApp() {
   const [toast, setToast] = useState(null);
   const [isAdminAuth, setIsAdminAuth] = useState(() => sessionStore.getItem('mediveu-admin') === '1');
   const [siteView, setSiteView] = useState(() => sessionStore.getItem('mediveu-site-view') === 'desktop' ? 'desktop' : 'mobile');
-  const [showViewToggle, setShowViewToggle] = useState(() => sessionStore.getItem('mediveu-view-toggle') !== 'hidden');
+  const [showViewToggle, setShowViewToggle] = useState(() => {
+    const preference = persistentStore.getItem('mediveu-view-toggle');
+    if (preference !== null) return preference !== 'hidden';
+    const legacyPreference = sessionStore.getItem('mediveu-view-toggle');
+    if (legacyPreference === 'hidden') persistentStore.setItem('mediveu-view-toggle', 'hidden');
+    return legacyPreference !== 'hidden';
+  });
 
   const [userDoc, setUserDoc] = useState(null);
   const [storeData, setStoreData] = useState(null);
@@ -62,6 +68,7 @@ function AuthenticatedApp() {
     viewport.content = siteView === 'desktop'
       ? 'width=1024, initial-scale=1, viewport-fit=cover'
       : 'width=device-width, initial-scale=1.0, viewport-fit=cover';
+    document.documentElement.classList.toggle('site-view-desktop', siteView === 'desktop');
     sessionStore.setItem('mediveu-site-view', siteView);
   }, [siteView]);
 
@@ -288,8 +295,8 @@ function AuthenticatedApp() {
         showViewToggle={showViewToggle}
         siteView={siteView}
         onSwitchSiteView={switchSiteView}
-        onHideViewToggle={() => { sessionStore.setItem('mediveu-view-toggle', 'hidden'); setShowViewToggle(false); }}
-        onShowViewToggle={() => { sessionStore.removeItem('mediveu-view-toggle'); setShowViewToggle(true); }}
+        onHideViewToggle={() => { persistentStore.setItem('mediveu-view-toggle', 'hidden'); setShowViewToggle(false); }}
+        onShowViewToggle={() => { persistentStore.removeItem('mediveu-view-toggle'); sessionStore.removeItem('mediveu-view-toggle'); setShowViewToggle(true); }}
       />
     );
   } else {
@@ -306,11 +313,12 @@ function AuthenticatedApp() {
             <ViewIcon size={16} aria-hidden="true" />
             <span>{siteView === 'mobile' ? 'Desktop Site View' : 'Mobile View'}</span>
           </button>
-          <button className="view-mode-toggle-dismiss" type="button" onClick={() => { sessionStore.setItem('mediveu-view-toggle', 'hidden'); setShowViewToggle(false); }} aria-label="Hide view toggle" title="Hide view toggle">
+          <button className="view-mode-toggle-dismiss" type="button" onClick={() => { persistentStore.setItem('mediveu-view-toggle', 'hidden'); setShowViewToggle(false); }} aria-label="Hide view toggle" title="Hide view toggle">
             <X size={15} aria-hidden="true" />
           </button>
         </div>
       )}
+      {!showViewToggle && <button type="button" className="view-mode-restore no-print" onClick={() => { persistentStore.removeItem('mediveu-view-toggle'); sessionStore.removeItem('mediveu-view-toggle'); setShowViewToggle(true); }} aria-label="Restore view switcher" title="Restore view switcher"><Eye size={16} aria-hidden="true" /><span>View</span></button>}
       {toast && <Toast key={toast.key} message={toast.message} type={toast.type} onClose={closeToast} />}
     </>
   );

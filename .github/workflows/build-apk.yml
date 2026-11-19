@@ -8,7 +8,7 @@ on:
   workflow_call:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: build-android-${{ github.workflow }}-${{ github.ref }}
@@ -62,10 +62,20 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Upload debug APK
+      - name: Prepare named APK asset
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk mediveu.apk
+
+      - name: Upload debug APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: mediveu-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: mediveu.apk
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish APK to GitHub Releases
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: android-${{ github.run_number }}-${{ github.run_attempt }}
+        run: gh release create "$TAG_NAME" mediveu.apk --repo "$GITHUB_REPOSITORY" --title "MEDIVEU Android APK" --notes "Android APK built from commit $GITHUB_SHA." --latest
