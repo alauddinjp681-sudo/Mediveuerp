@@ -214,17 +214,21 @@ function AuthenticatedApp() {
   }, [user?.uid, view, userDoc?.storeId, membership?.role]);
 
   const userData = useMemo(() => {
+    const subscription = storeData?.subscription || userDoc?.subscription || {};
     const createdFallback = user?.metadata?.creationTime ? new Date(user.metadata.creationTime).getTime() : Date.now();
     return {
       ...(userDoc || {}),
       ...(storeData || {}),
-      storeId: userDoc?.storeId,
-      role: membership?.role,
-      email: userDoc?.email || user?.email,
-      plan: storeData?.plan || userDoc?.plan || '7 Days Free Trial',
-      status: storeData?.status || userDoc?.status || 'Active',
+      storeId: userDoc?.storeId || storeData?.storeId || null,
+      role: membership?.role || userDoc?.role || 'worker',
+      email: userDoc?.email || user?.email || '',
+      plan: storeData?.plan || subscription?.plan || userDoc?.plan || '7 Days Free Trial',
+      status: storeData?.status || subscription?.status || userDoc?.status || 'Active',
+      subscriptionEndsAt: storeData?.subscriptionEndsAt || subscription?.endsAt || userDoc?.subscriptionEndsAt || null,
+      referralCode: storeData?.referralCode || userDoc?.referralCode || null,
+      referrals: Array.isArray(storeData?.referrals) ? storeData.referrals : [],
       createdAt: storeData?.createdAt || userDoc?.createdAt || createdFallback,
-      settings,
+      settings: settings || {},
     };
   }, [userDoc, storeData, membership, settings, user]);
 
@@ -232,6 +236,9 @@ function AuthenticatedApp() {
     setIsAdminAuth(ok);
     if (ok) sessionStore.setItem('mediveu-admin', '1');
   };
+
+  const switchSiteView = () => setSiteView((current) => current === 'mobile' ? 'desktop' : 'mobile');
+  const ViewIcon = siteView === 'mobile' ? Monitor : Smartphone;
 
   let content;
   if (firebaseConfigError) {
@@ -288,9 +295,6 @@ function AuthenticatedApp() {
   } else {
     content = <PublicSite navigate={navigate} showToast={showToast} tab={path} setTab={setPath} />;
   }
-
-  const switchSiteView = () => setSiteView((current) => current === 'mobile' ? 'desktop' : 'mobile');
-  const ViewIcon = siteView === 'mobile' ? Monitor : Smartphone;
 
   return (
     <>
