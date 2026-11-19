@@ -63,11 +63,11 @@ export default async function handler(req, res) {
       transaction.set(storeRef, profile, { merge: true });
 
       let referralRewardDays = 0;
-      const canVerifyReferral = referralRef && referrerSnap?.exists && planId === 'monthly'
+      const canVerifyReferral = referralRef && referrerSnap?.exists
         && (!buyer.referredBy || buyer.referredBy === referrerUid)
         && (!referralSnap?.exists || referralSnap.get('status') === 'pending');
       if (canVerifyReferral) {
-        const qualifiedCount = Number(statsSnap?.get('qualifiedMonthly') || 0) + 1;
+        const qualifiedCount = Number(statsSnap?.get('qualifiedPurchases') ?? statsSnap?.get('qualifiedMonthly') ?? 0) + 1;
         const earnedMonths = Math.floor(qualifiedCount / 3);
         const appliedMonths = Number(statsSnap?.get('rewardMonthsApplied') || 0);
         const monthsToApply = Math.max(0, earnedMonths - appliedMonths);
@@ -77,7 +77,7 @@ export default async function handler(req, res) {
           qualifyingOrderId: orderId, qualifyingPaymentId: paymentId, verifiedAt: FieldValue.serverTimestamp(),
         }, { merge: true });
         transaction.set(statsRef, {
-          qualifiedMonthly: qualifiedCount,
+          qualifiedPurchases: qualifiedCount,
           rewardMonthsEarned: earnedMonths,
           rewardMonthsApplied: appliedMonths + monthsToApply,
           updatedAt: FieldValue.serverTimestamp(),

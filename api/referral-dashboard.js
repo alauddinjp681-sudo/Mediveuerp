@@ -19,7 +19,7 @@ export default async function handler(req, res) {
     return respond(res, 200, {
       referrals,
       total: countSnap.data().count,
-      verified: Number(stats.qualifiedMonthly || 0),
+      verified: Number(stats.qualifiedPurchases ?? stats.qualifiedMonthly ?? 0),
       rewardMonthsEarned: Number(stats.rewardMonthsEarned || 0),
       rewardMonthsApplied: Number(stats.rewardMonthsApplied || 0),
     });
