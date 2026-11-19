@@ -1,4 +1,4 @@
-import { authenticate, db, handleError, method, plans, razorpay, requireOwner, respond } from '../server/billing.js';
+import { authenticate, db, FieldValue, handleError, method, plans, razorpay, requireOwner, respond } from '../server/billing.js';
 
 export default async function handler(req, res) {
   if (!method(req, res, 'POST')) return;
@@ -32,6 +32,28 @@ export default async function handler(req, res) {
       receipt: `mediveu_${uid.slice(0, 12)}_${Date.now()}`,
       notes: { userId: uid, planId, referrerUid },
     });
+    if (referrerUid) {
+      const buyerRef = db.doc(`users/${uid}`);
+      const referrerRef = db.doc(`users/${referrerUid}`);
+      const referralRef = db.doc(`referrals/${referrerUid}__${uid}`);
+      await db.runTransaction(async (transaction) => {
+        const [buyerSnap, referrerSnap, referralSnap] = await Promise.all([
+          transaction.get(buyerRef), transaction.get(referrerRef), transaction.get(referralRef),
+        ]);
+        if (!buyerSnap.exists || !referrerSnap.exists) throw Object.assign(new Error('The referral account is not available.'), { statusCode: 400 });
+        const buyer = buyerSnap.data();
+        if (buyer.referredBy && buyer.referredBy !== referrerUid) {
+          throw Object.assign(new Error('A different referral is already linked to this account.'), { statusCode: 409 });
+        }
+        if (!referralSnap.exists) {
+          transaction.set(buyerRef, { referredBy: referrerUid, referralLinkedAt: FieldValue.serverTimestamp() }, { merge: true });
+          transaction.set(referralRef, {
+            referrerUid, referredUserId: uid, status: 'pending',
+            linkedAt: FieldValue.serverTimestamp(), rewardEligible: false,
+          });
+        }
+      });
+    }
     return respond(res, 200, { id: order.id, amount: order.amount, currency: order.currency, keyId, planId });
   } catch (error) {
     return handleError(res, error);
