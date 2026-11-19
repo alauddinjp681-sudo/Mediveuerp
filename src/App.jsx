@@ -5,6 +5,7 @@ import { collection, doc, onSnapshot } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { auth, db, functions, firebaseConfigError } from './firebase';
 import { storeCollection, storeDocument } from './lib/storeAccess';
+import { setupStoreForUser } from './lib/storeSetup';
 import { describeSetupError } from './lib/setupError';
 import { readableFirebaseError } from './lib/firebaseError';
 import { sessionStore } from './lib/sessionStore';
@@ -115,18 +116,6 @@ export default function App() {
       return { ...described, title: 'Store access unavailable', message: message || described.message, retryable: true };
     };
 
-    const callEnsureStore = async (payload) => {
-      const ensureStore = httpsCallable(functions, 'ensureStore', { timeout: 540000 });
-      try {
-        return await ensureStore(payload);
-      } catch (error) {
-        if (!active || !describeSetupError(error).autoRetry) throw error;
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-        if (!active) throw error;
-        return ensureStore(payload);
-      }
-    };
-
     const bootstrap = async () => {
       setMembership(null);
       setStoreSetupError(null);
@@ -138,12 +127,13 @@ export default function App() {
         } catch {
           registration = {};
         }
-        const { data: context } = await callEnsureStore({
+        const context = await setupStoreForUser(user, {
           invitationCode: registration.invitationCode || '',
-          registration: { storeName: registration.storeName || '', phone: registration.phone || '' },
+          storeName: registration.storeName || '',
+          phone: registration.phone || '',
         });
         if (!active) return;
-        if (!context?.storeId) throw Object.assign(new Error('The setup service returned no store.'), { code: 'failed-precondition' });
+        if (!context?.storeId) throw Object.assign(new Error('Client-side store setup returned no store.'), { code: 'failed-precondition' });
         sessionStore.removeItem('mediveu-registration');
         setStoreSetupError(null);
         const storeId = context.storeId;
