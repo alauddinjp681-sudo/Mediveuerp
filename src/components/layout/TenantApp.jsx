@@ -63,14 +63,21 @@ function NavList({ path, go, onLogout, role }) {
   );
 }
 
-export default function TenantApp({ user, userData, path, setPath, navigate, showToast, onLogout, data, showViewToggle, siteView, onSwitchSiteView, onHideViewToggle, onShowViewToggle }) {
+export default function TenantApp({ user = {}, userData = {}, path = 'dashboard', setPath = () => {}, navigate = () => {}, showToast = () => {}, onLogout = () => {}, data = {}, showViewToggle = false, siteView = 'mobile', onSwitchSiteView = () => {}, onHideViewToggle = () => {}, onShowViewToggle = () => {} }) {
+  const safeData = {
+    ...data,
+    bills: Array.isArray(data?.bills) ? data.bills : [],
+    inventory: Array.isArray(data?.inventory) ? data.inventory : [],
+    customers: Array.isArray(data?.customers) ? data.customers : [],
+    suppliers: Array.isArray(data?.suppliers) ? data.suppliers : [],
+  };
   const [drawer, setDrawer] = useState(false);
   const [editBill, setEditBill] = useState(null);
   const [activeSupplier, setActiveSupplier] = useState(null);
   const online = useOnline();
   const role = user?.role || 'worker';
   const visibleBottom = (role === 'worker' ? WORKER_BOTTOM : BOTTOM).filter((id) => canAccessView(role, id));
-  const { plan, timeLeft, isUrgent } = useSubscriptionTimer(userData);
+  const { plan, timeLeft, isUrgent } = useSubscriptionTimer(userData || {});
   const ViewIcon = siteView === 'mobile' ? Monitor : Smartphone;
 
   useEffect(() => {
@@ -90,18 +97,18 @@ export default function TenantApp({ user, userData, path, setPath, navigate, sho
 
   const page = (() => {
     switch (canAccessView(role, path) ? path : 'dashboard') {
-      case 'billing': return <BillingPOS user={user} userData={userData} editBill={editBill} onClearEdit={() => setEditBill(null)} showToast={showToast} bills={data.bills} inventory={data.inventory} customers={data.customers} navigate={go} />;
+      case 'billing': return <BillingPOS user={user} userData={userData} editBill={editBill} onClearEdit={() => setEditBill(null)} showToast={showToast} bills={safeData.bills} inventory={safeData.inventory} customers={safeData.customers} navigate={go} />;
       case 'inventory': return <Inventory user={user} showToast={showToast} canEdit={canEditInventory(role)} />;
       case 'customers': return <Customers user={user} showToast={showToast} canEdit={role !== 'accountant'} canManageBills={canManageBills(role)} />;
       case 'suppliers': return <Suppliers user={user} onNavigate={go} showToast={showToast} canEdit={canManageStore(role)} />;
       case 'supplierLedger': return <SupplierLedger user={user} supplier={activeSupplier} onBack={() => go('suppliers')} showToast={showToast} canEdit={canManageStore(role)} />;
       case 'purchaseEntry': return <PurchaseEntry user={user} preSelectedSupplier={activeSupplier} onNavigate={go} showToast={showToast} canEdit={canManageStore(role)} />;
-      case 'reports': return <Reports data={{ ...data, medicines: data.inventory }} role={role} onOpenBill={(bill) => go('billing', bill)} />;
+      case 'reports': return <Reports data={{ ...safeData, medicines: safeData.inventory }} role={role} onOpenBill={(bill) => go('billing', bill)} />;
       case 'plans': return <SubscriptionPlans user={user} userData={userData} showToast={showToast} navigate={(v, p) => (v === 'public' ? navigate(v, p) : go(p === 'pos' ? 'billing' : p || 'dashboard'))} />;
       case 'referrals': return <ReferralCenter user={user} userData={userData} showToast={showToast} />;
       case 'team': return <TeamAccess user={user} showToast={showToast} />;
-      case 'settings': return <SettingsView user={user} userData={userData} data={data} showToast={showToast} />;
-      default: return <Dashboard userData={userData} data={data} go={go} />;
+      case 'settings': return <SettingsView user={user} userData={userData} data={safeData} showToast={showToast} />;
+      default: return <Dashboard userData={userData} data={safeData} go={go} />;
     }
   })();
 
