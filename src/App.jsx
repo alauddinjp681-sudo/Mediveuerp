@@ -1,5 +1,6 @@
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { Monitor, Smartphone } from 'lucide-react';
 import { collection, doc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { Toast, Spinner, BrandMark } from './components/ui';
@@ -28,6 +29,7 @@ export default function App() {
   const [path, setPath] = useState('home');
   const [toast, setToast] = useState(null);
   const [isAdminAuth, setIsAdminAuth] = useState(() => sessionStorage.getItem('mediveu-admin') === '1');
+  const [siteView, setSiteView] = useState(() => sessionStorage.getItem('mediveu-site-view') === 'desktop' ? 'desktop' : 'mobile');
 
   const [userDoc, setUserDoc] = useState(null);
   const [settings, setSettings] = useState({});
@@ -38,6 +40,15 @@ export default function App() {
 
   const showToast = useCallback((message, type = 'success') => setToast({ message, type, key: Date.now() }), []);
   const closeToast = useCallback(() => setToast(null), []);
+
+  useEffect(() => {
+    const viewport = document.querySelector('meta[name="viewport"]');
+    if (!viewport) return;
+    viewport.content = siteView === 'desktop'
+      ? 'width=1024, initial-scale=1, viewport-fit=cover'
+      : 'width=device-width, initial-scale=1.0, viewport-fit=cover';
+    sessionStorage.setItem('mediveu-site-view', siteView);
+  }, [siteView]);
 
   useEffect(() => {
     const onPop = () => setView(isAdminRoute() ? 'admin' : (auth.currentUser ? 'tenant' : 'public'));
@@ -141,9 +152,17 @@ export default function App() {
     content = <PublicSite navigate={navigate} showToast={showToast} tab={path} setTab={setPath} />;
   }
 
+  const switchSiteView = () => setSiteView((current) => current === 'mobile' ? 'desktop' : 'mobile');
+  const ViewIcon = siteView === 'mobile' ? Monitor : Smartphone;
+
   return (
     <>
       <Suspense fallback={<FullScreenLoader />}>{content}</Suspense>
+      <button className={`view-mode-toggle no-print ${view === 'public' ? 'view-mode-toggle-public' : ''}`} type="button" onClick={switchSiteView}
+        aria-label={`Switch to ${siteView === 'mobile' ? 'Desktop Site View' : 'Mobile View'}`}>
+        <ViewIcon size={16} aria-hidden="true" />
+        <span>{siteView === 'mobile' ? 'Desktop Site View' : 'Mobile View'}</span>
+      </button>
       {toast && <Toast key={toast.key} message={toast.message} type={toast.type} onClose={closeToast} />}
     </>
   );

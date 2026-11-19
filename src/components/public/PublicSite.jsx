@@ -2,9 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { createUserWithEmailAndPassword, sendPasswordResetEmail, signInWithEmailAndPassword } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
 import { doc, setDoc } from 'firebase/firestore';
-import { Receipt, Package, WifiOff, Smartphone, LayoutTemplate, BarChart3, ShieldCheck, Users, Check, ArrowRight, Menu, X, Phone, Mail, Download } from 'lucide-react';
+import { Receipt, Package, WifiOff, Smartphone, LayoutTemplate, BarChart3, ShieldCheck, Users, Check, ArrowRight, Menu, X, Phone, Mail, Download, LockKeyhole, Sparkles } from 'lucide-react';
 import { auth, db, functions } from '../../firebase';
-import { BrandMark, Button, Card, Field, Modal, cn } from '../ui';
+import { BrandMark, Button, Card, Field, cn } from '../ui';
 
 const FEATURES = [
   { icon: Receipt, title: 'Fast GST Billing', text: 'Keyboard-first billing (F2 save, F4 print) with barcode scan, CGST/SGST/IGST and auto amount in words.' },
@@ -175,13 +175,26 @@ function Contact() {
 
 function AuthCard({ title, subtitle, children }) {
   return (
-    <section className="max-w-md mx-auto px-4 py-14 md:py-20">
-      <Card className="p-6 md:p-8">
-        <div className="flex justify-center mb-5"><BrandMark /></div>
-        <h1 className="text-xl font-bold text-white text-center">{title}</h1>
-        <p className="text-sm text-slate-400 text-center mt-1 mb-6">{subtitle}</p>
-        {children}
-      </Card>
+    <section className="auth-scene">
+      <div className="auth-layout">
+        <div className="auth-story">
+          <div className="auth-orbit auth-orbit-one" aria-hidden="true" />
+          <div className="auth-orbit auth-orbit-two" aria-hidden="true" />
+          <div className="auth-story-content">
+            <span className="auth-eyebrow"><Sparkles size={14} /> MEDIVEU SECURE ACCESS</span>
+            <h2>Care for your<br /><span>business, clearly.</span></h2>
+            <p>One calm place for billing, stock, customers and the daily work that keeps your pharmacy moving.</p>
+            <div className="auth-trust"><LockKeyhole size={15} /> Your account is protected by Firebase Authentication</div>
+          </div>
+        </div>
+        <Card className="auth-panel">
+          <div className="auth-brand"><BrandMark /></div>
+          <h1>{title}</h1>
+          <p className="auth-subtitle">{subtitle}</p>
+          {children}
+          <div className="auth-footer"><ShieldCheck size={14} /> Secure access to your store workspace</div>
+        </Card>
+      </div>
     </section>
   );
 }
@@ -190,8 +203,6 @@ function Login({ setTab, showToast }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
-  const [resetOpen, setResetOpen] = useState(false);
-  const [resetEmail, setResetEmail] = useState('');
 
   const submit = async (e) => {
     e.preventDefault();
@@ -205,35 +216,46 @@ function Login({ setTab, showToast }) {
     setBusy(false);
   };
 
-  const reset = async (e) => {
-    e.preventDefault();
-    try {
-      await sendPasswordResetEmail(auth, resetEmail.trim());
-      showToast('Password reset link sent. Check your inbox.');
-      setResetOpen(false);
-    } catch (err) {
-      showToast(authError(err), 'error');
-    }
-  };
-
   return (
     <AuthCard title="Login to your store" subtitle="Welcome back to MEDIVEU ERP">
       <form onSubmit={submit} className="space-y-4">
         <Field label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
         <Field label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" />
         <div className="flex justify-end">
-          <button type="button" onClick={() => { setResetEmail(email); setResetOpen(true); }} className="text-sm text-brand-sky hover:underline">Forgot password?</button>
+          <button type="button" onClick={() => { setTab('forgot'); }} className="text-sm text-brand-sky hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-sky rounded">Forgot password?</button>
         </div>
-        <Button type="submit" className="w-full" disabled={busy}>{busy ? 'Logging in...' : 'Login'}</Button>
+        <Button type="submit" className="w-full" disabled={busy}>{busy ? 'Logging in...' : 'Login securely'} <ArrowRight size={16} /></Button>
       </form>
       <p className="mt-5 text-center text-sm text-slate-400">New here? <button onClick={() => setTab('register')} className="text-brand-sky font-semibold hover:underline">Create account</button></p>
-      <Modal isOpen={resetOpen} onClose={() => setResetOpen(false)} title="Reset password">
-        <form onSubmit={reset} className="space-y-4">
-          <p className="text-sm text-slate-400">Enter your registered email and we will send a secure reset link.</p>
-          <Field label="Email" type="email" value={resetEmail} onChange={(e) => setResetEmail(e.target.value)} required />
-          <Button type="submit" className="w-full">Send reset link</Button>
-        </form>
-      </Modal>
+    </AuthCard>
+  );
+}
+
+function ForgotPassword({ setTab, showToast }) {
+  const [email, setEmail] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (event) => {
+    event.preventDefault();
+    setBusy(true);
+    try {
+      await sendPasswordResetEmail(auth, email.trim());
+      showToast('Password reset link sent. Check your inbox.');
+      setTab('login');
+    } catch (error) {
+      showToast(authError(error), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <AuthCard title="Reset your password" subtitle="We will email a secure link to get you back into your store.">
+      <form onSubmit={submit} className="space-y-4">
+        <Field label="Account email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" />
+        <Button type="submit" className="w-full" disabled={busy}>{busy ? 'Sending secure link...' : 'Send reset link'} <ArrowRight size={16} /></Button>
+      </form>
+      <p className="mt-5 text-center text-sm text-slate-400"><button onClick={() => setTab('login')} className="text-brand-sky font-semibold hover:underline">Back to login</button></p>
     </AuthCard>
   );
 }
@@ -289,7 +311,7 @@ export default function PublicSite({ showToast, tab, setTab }) {
   useEffect(() => {
     if (new URLSearchParams(window.location.search).has('ref') && window.location.hash === '#register' && tab !== 'register') setTab('register');
   }, [tab, setTab]);
-  const current = ['home', 'features', 'pricing', 'contact', 'login', 'register'].includes(tab) ? tab : 'home';
+  const current = ['home', 'features', 'pricing', 'contact', 'login', 'register', 'forgot'].includes(tab) ? tab : 'home';
   const goTab = (t) => { setTab(t); setMenu(false); window.scrollTo(0, 0); };
 
   const page = {
@@ -299,6 +321,7 @@ export default function PublicSite({ showToast, tab, setTab }) {
     contact: <Contact />,
     login: <Login setTab={goTab} showToast={showToast} />,
     register: <Register setTab={goTab} showToast={showToast} />,
+    forgot: <ForgotPassword setTab={goTab} showToast={showToast} />,
   }[current];
 
   return (
