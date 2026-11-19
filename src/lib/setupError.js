@@ -3,11 +3,11 @@ const GENERIC_MESSAGES = new Set(['internal', 'INTERNAL', 'unavailable', 'not-fo
 const CODE_HELP = {
   internal: {
     title: 'Store setup could not finish',
-    message: 'The setup service did not respond correctly. This usually means the ensureStore Cloud Function is not deployed in asia-south1, or it crashed before reporting a reason. Your existing records have not been changed.',
+    message: 'Store setup could not finish. Check your connection and Firestore permissions, then press Retry setup. Your existing records have not been deleted.'
   },
   'not-found': {
-    title: 'Setup service not found',
-    message: 'The ensureStore Cloud Function is not deployed to the asia-south1 region. Deploy Firebase Functions, then press Retry setup.',
+    title: 'Store setup unavailable',
+    message: 'Store setup could not reach Firestore. Check your connection and Firestore rules, then press Retry setup.'
   },
   unavailable: {
     title: 'Setup service is busy',

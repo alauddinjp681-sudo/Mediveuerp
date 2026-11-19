@@ -24,20 +24,90 @@ service cloud.firestore {
       return hasRole(storeId, ['owner', 'manager']);
     }
 
-    function legacyAccessAllowed(userId) {
+    function migrationOwner(storeId) {
+      let storePath = /databases/$(database)/documents/stores/$(storeId);
+      let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
+      return signedIn()
+        && storeId == request.auth.uid
+        && exists(storePath)
+        && get(storePath).data.ownerUid == request.auth.uid
+        && get(storePath).data.migrationStatus == 'in_progress'
+        && exists(userPath)
+        && get(userPath).data.migrationStoreId == request.auth.uid
+        && get(userPath).data.migrationStatus == 'in_progress';
+    }
+
+    function acceptedInvitationMatches(storeId, userId, invitationId, role, email) {
+      let invitationPath = /databases/$(database)/documents/storeInvitations/$(invitationId);
+      return invitationId is string
+        && invitationId.size() == 64
+        && existsAfter(invitationPath)
+        && getAfter(invitationPath).data.storeId == storeId
+        && getAfter(invitationPath).data.status == 'accepted'
+        && getAfter(invitationPath).data.acceptedUid == userId
+        && getAfter(invitationPath).data.role == role
+        && getAfter(invitationPath).data.email == email
+        && getAfter(invitationPath).data.expiresAt > request.time;
+    }
+
+    function membershipAfterMatches(userId) {
+      let storeId = request.resource.data.get('storeId', '');
+      let memberRef = /databases/$(database)/documents/stores/$(storeId)/members/$(userId);
+      return storeId is string
+        && storeId.size() > 0
+        && existsAfter(memberRef)
+        && getAfter(memberRef).data.uid == userId
+        && getAfter(memberRef).data.status == 'active'
+        && getAfter(memberRef).data.role == request.resource.data.role
+        && getAfter(memberRef).data.email == request.auth.token.email;
+    }
+
+    function legacyReadAllowed(userId) {
       let userPath = /databases/$(database)/documents/users/$(userId);
-      return request.auth.uid == userId
-        && (!exists(userPath) || (!('storeId' in get(userPath).data) && get(userPath).data.migrationStatus != 'in_progress'));
+      return signedIn() && request.auth.uid == userId
+        && (!exists(userPath)
+          || !('storeId' in get(userPath).data)
+          || get(userPath).data.migrationStatus == 'in_progress');
+    }
+
+    function legacyWriteAllowed(userId) {
+      let userPath = /databases/$(database)/documents/users/$(userId);
+      return signedIn() && request.auth.uid == userId
+        && (!exists(userPath)
+          || (!('storeId' in get(userPath).data)
+            && get(userPath).data.migrationStatus != 'in_progress'));
     }
 
     match /users/{userId} {
+      function validProfileFields() {
+        return request.resource.data.keys().hasOnly([
+          'email', 'status', 'plan', 'createdAt', 'storeName', 'phone', 'pendingInvitationCode',
+          'storeId', 'role', 'migrationStoreId', 'migrationStatus', 'migrationError',
+          'migrationFailedAt', 'migrationCompletedAt', 'updatedAt', 'subscriptionEndsAt'
+        ]);
+      }
+
+      function ownerBootstrapProfile() {
+        return !('storeId' in request.resource.data)
+          && request.resource.data.migrationStoreId == userId
+          && request.resource.data.migrationStatus == 'in_progress';
+      }
+
       allow get: if signedIn() && request.auth.uid == userId;
       allow list: if signedIn() && request.auth.token.admin == true;
       allow create: if signedIn()
         && request.auth.uid == userId
-        && request.resource.data.keys().hasOnly(['email', 'status', 'plan', 'createdAt', 'storeName', 'phone', 'pendingInvitationCode'])
-        && request.resource.data.email == request.auth.token.email;
-      allow update, delete: if false;
+        && validProfileFields()
+        && request.resource.data.email == request.auth.token.email
+        && (ownerBootstrapProfile() || membershipAfterMatches(userId));
+      allow update: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'storeId', 'role', 'migrationStoreId', 'migrationStatus', 'migrationError',
+          'migrationFailedAt', 'migrationCompletedAt', 'updatedAt', 'pendingInvitationCode'
+        ])
+        && (ownerBootstrapProfile() || membershipAfterMatches(userId));
+      allow delete: if false;
 
       match /payments/{paymentId} {
         allow read: if signedIn() && request.auth.uid == userId;
@@ -45,19 +115,68 @@ service cloud.firestore {
       }
 
       match /{legacyPath=**} {
-        allow read, write: if legacyAccessAllowed(userId);
+        allow read: if legacyReadAllowed(userId);
+        allow write: if legacyWriteAllowed(userId);
       }
     }
 
     match /stores/{storeId} {
-      allow get: if isStoreMember(storeId);
-      allow list, create, update, delete: if false;
+      allow get: if isStoreMember(storeId)
+        || (signedIn() && (storeId == request.auth.uid || resource.data.ownerUid == request.auth.uid));
+      allow list: if false;
+      allow create: if signedIn()
+        && storeId == request.auth.uid
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.migrationStatus == 'in_progress'
+        && request.resource.data.keys().hasOnly([
+          'ownerUid', 'name', 'status', 'plan', 'subscriptionEndsAt', 'createdAt', 'migrationStatus'
+        ]);
+      allow update: if migrationOwner(storeId)
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'migrationStatus', 'migrationError', 'migrationFailedAt', 'migratedAt'
+        ]);
+      allow delete: if false;
 
       match /members/{memberId} {
-        allow get: if isStoreMember(storeId)
-          && (request.auth.uid == memberId || isOwnerOrManager(storeId));
+        function canCreateOwnerMembership() {
+          let storePath = /databases/$(database)/documents/stores/$(storeId);
+          return request.auth.uid == memberId
+            && memberId == storeId
+            && request.resource.data.role == 'owner'
+            && request.resource.data.joinedAt == request.time
+            && existsAfter(storePath)
+            && getAfter(storePath).data.ownerUid == request.auth.uid;
+        }
+
+        function canCreateInvitedMembership() {
+          return request.auth.uid == memberId
+            && request.resource.data.role in ['manager', 'worker', 'accountant']
+            && acceptedInvitationMatches(
+              storeId,
+              memberId,
+              request.resource.data.get('invitationId', ''),
+              request.resource.data.role,
+              request.resource.data.email
+            )
+            && request.resource.data.email == request.auth.token.email
+            && request.resource.data.joinedAt == request.time;
+        }
+
+        allow get: if signedIn()
+          && ((request.auth.uid == memberId
+              && (!exists(memberPath(storeId, memberId)) || isStoreMember(storeId)))
+            || (isStoreMember(storeId) && isOwnerOrManager(storeId)));
         allow list: if isOwnerOrManager(storeId);
-        allow create, update, delete: if false;
+        allow create: if signedIn()
+          && request.resource.data.uid == memberId
+          && request.resource.data.status == 'active'
+          && request.resource.data.email == request.auth.token.email
+          && request.resource.data.keys().hasOnly([
+            'uid', 'email', 'role', 'status', 'joinedAt', 'invitationId', 'invitedBy'
+          ])
+          && (canCreateOwnerMembership() || canCreateInvitedMembership());
+        allow update, delete: if false;
       }
 
       match /invitations/{invitationId} {
@@ -121,14 +240,18 @@ service cloud.firestore {
         }
 
         allow read: if roleCanRead();
-        allow create: if roleCanCreate();
-        allow update: if roleCanUpdate()
-          && (collectionName != 'inventory' || request.resource.data.get('qty', 0) >= 0)
-          && (collectionName != 'bills' || (
-            request.resource.data.get('revision', 0) == resource.data.get('revision', 0) + 1
-            && request.resource.data.get('createdBy', request.auth.uid) == resource.data.get('createdBy', request.auth.uid)
-            && (resource.data.get('status', 'final') == 'draft' || request.resource.data.status == 'final')
-          ));
+        allow create: if (migrationOwner(storeId)
+            && collectionName in ['settings', 'inventory', 'bills', 'customers', 'suppliers', 'purchases', 'transactions', 'supplier_transactions', 'payments'])
+          || roleCanCreate();
+        allow update: if (migrationOwner(storeId)
+            && collectionName in ['settings', 'inventory', 'bills', 'customers', 'suppliers', 'purchases', 'transactions', 'supplier_transactions', 'payments'])
+          || (roleCanUpdate()
+            && (collectionName != 'inventory' || request.resource.data.get('qty', 0) >= 0)
+            && (collectionName != 'bills' || (
+              request.resource.data.get('revision', 0) == resource.data.get('revision', 0) + 1
+              && request.resource.data.get('createdBy', request.auth.uid) == resource.data.get('createdBy', request.auth.uid)
+              && (resource.data.get('status', 'final') == 'draft' || request.resource.data.status == 'final')
+            )));
         allow delete: if roleCanDelete();
 
         match /events/{eventId} {
@@ -147,6 +270,22 @@ service cloud.firestore {
 
     match /admin/{document=**} {
       allow read, write: if signedIn() && request.auth.token.admin == true;
+    }
+
+    match /storeInvitations/{invitationId} {
+      allow get: if signedIn()
+        && resource.data.email == request.auth.token.email
+        && (resource.data.status == 'pending'
+          || (resource.data.status == 'accepted' && resource.data.acceptedUid == request.auth.uid));
+      allow list, create, delete: if false;
+      allow update: if signedIn()
+        && resource.data.email == request.auth.token.email
+        && resource.data.status == 'pending'
+        && resource.data.expiresAt > request.time
+        && request.resource.data.status == 'accepted'
+        && request.resource.data.acceptedUid == request.auth.uid
+        && request.resource.data.acceptedAt == request.time
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'acceptedUid', 'acceptedAt']);
     }
 
     match /referrals/{document=**} {
