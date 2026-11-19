@@ -12,6 +12,7 @@ import { Toast, Spinner, BrandMark } from './components/ui';
 import PublicSite from './components/public/PublicSite';
 import StoreSetupError from './components/StoreSetupError';
 
+const PromotionHub = lazy(() => import('./components/PromotionHub'));
 const TenantApp = lazy(() => import('./components/layout/TenantApp'));
 const AdminPanel = lazy(() => import('./components/AdminPanel'));
 const AdminLogin = lazy(() => import('./components/AdminLogin'));
@@ -28,7 +29,7 @@ function FullScreenLoader() {
   );
 }
 
-export default function App() {
+function AuthenticatedApp() {
   const lastAuthUidRef = useRef(null);
   const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
@@ -309,4 +310,11 @@ export default function App() {
       {toast && <Toast key={toast.key} message={toast.message} type={toast.type} onClose={closeToast} />}
     </>
   );
+}
+
+export default function App() {
+  if (window.location.pathname.replace(/\/$/, '') === '/promote-assets') {
+    return <Suspense fallback={<FullScreenLoader />}><PromotionHub /></Suspense>;
+  }
+  return <AuthenticatedApp />;
 }
