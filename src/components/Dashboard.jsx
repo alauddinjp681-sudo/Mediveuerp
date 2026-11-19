@@ -33,9 +33,14 @@ function PlanBanner({ userData, go }) {
             <span className="font-bold text-white">{plan}</span>
             <Badge tone={status === 'Active' ? 'success' : 'danger'}>{status}</Badge>
           </div>
-          <div className="text-xs text-slate-400 mt-0.5 flex items-center gap-1.5">
-            <Clock size={12} />
-            {timeLeft.isExpired ? 'Plan expired' : `${timeLeft.days}d ${timeLeft.hours}h left`} · valid till {expiryLabel}
+          <div className="text-xs text-slate-400 mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1">
+            <Clock size={12} aria-hidden="true" />
+            {timeLeft.isExpired ? <span>Plan expired</span> : (
+              <span className="font-mono font-semibold tabular text-brand-sky" aria-label={`${timeLeft.days} days, ${timeLeft.hours} hours, ${timeLeft.minutes} minutes and ${timeLeft.seconds} seconds remaining`}>
+                {timeLeft.days}d : {String(timeLeft.hours).padStart(2, '0')}h : {String(timeLeft.minutes).padStart(2, '0')}m : {String(timeLeft.seconds).padStart(2, '0')}s
+              </span>
+            )}
+            <span>· valid till {expiryLabel}</span>
           </div>
         </div>
       </div>

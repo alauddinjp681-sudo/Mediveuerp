@@ -324,7 +324,7 @@ export default function PublicSite({ showToast, tab, setTab }) {
 
   return (
     <div className="min-h-dvh flex flex-col bg-ink-950">
-      <header className="sticky top-0 z-40 border-b border-white/[0.07] bg-ink-950/80 backdrop-blur">
+      <header className="site-header sticky top-0 z-40 border-b border-white/[0.07] bg-ink-950/80 backdrop-blur">
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           <button onClick={() => goTab('home')} aria-label="MEDIVEU ERP home"><BrandMark size="sm" /></button>
           <nav className="hidden md:flex items-center gap-1" aria-label="Website">

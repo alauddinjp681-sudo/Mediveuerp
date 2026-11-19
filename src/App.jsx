@@ -1,6 +1,6 @@
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { Monitor, Smartphone } from 'lucide-react';
+import { Monitor, Smartphone, X } from 'lucide-react';
 import { collection, doc, onSnapshot } from 'firebase/firestore';
 import { auth, db, firebaseConfigError } from './firebase';
 import { storeCollection, storeDocument } from './lib/storeAccess';
@@ -38,6 +38,7 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [isAdminAuth, setIsAdminAuth] = useState(() => sessionStore.getItem('mediveu-admin') === '1');
   const [siteView, setSiteView] = useState(() => sessionStore.getItem('mediveu-site-view') === 'desktop' ? 'desktop' : 'mobile');
+  const [showViewToggle, setShowViewToggle] = useState(() => sessionStore.getItem('mediveu-view-toggle') !== 'hidden');
 
   const [userDoc, setUserDoc] = useState(null);
   const [storeData, setStoreData] = useState(null);
@@ -276,6 +277,11 @@ export default function App() {
         showToast={showToast}
         onLogout={handleLogout}
         data={{ inventory, bills, customers, suppliers }}
+        showViewToggle={showViewToggle}
+        siteView={siteView}
+        onSwitchSiteView={switchSiteView}
+        onHideViewToggle={() => { sessionStore.setItem('mediveu-view-toggle', 'hidden'); setShowViewToggle(false); }}
+        onShowViewToggle={() => { sessionStore.removeItem('mediveu-view-toggle'); setShowViewToggle(true); }}
       />
     );
   } else {
@@ -288,11 +294,18 @@ export default function App() {
   return (
     <>
       <Suspense fallback={<FullScreenLoader />}>{content}</Suspense>
-      <button className={`view-mode-toggle no-print ${view === 'public' ? 'view-mode-toggle-public' : ''}`} type="button" onClick={switchSiteView}
-        aria-label={`Switch to ${siteView === 'mobile' ? 'Desktop Site View' : 'Mobile View'}`}>
-        <ViewIcon size={16} aria-hidden="true" />
-        <span>{siteView === 'mobile' ? 'Desktop Site View' : 'Mobile View'}</span>
-      </button>
+      {showViewToggle && view !== 'tenant' && (
+        <div className={`view-mode-toggle no-print ${view === 'public' ? 'view-mode-toggle-public' : ''}`}>
+          <button className="view-mode-toggle-action" type="button" onClick={switchSiteView}
+            aria-label={`Switch to ${siteView === 'mobile' ? 'Desktop Site View' : 'Mobile View'}`}>
+            <ViewIcon size={16} aria-hidden="true" />
+            <span>{siteView === 'mobile' ? 'Desktop Site View' : 'Mobile View'}</span>
+          </button>
+          <button className="view-mode-toggle-dismiss" type="button" onClick={() => { sessionStore.setItem('mediveu-view-toggle', 'hidden'); setShowViewToggle(false); }} aria-label="Hide view toggle" title="Hide view toggle">
+            <X size={15} aria-hidden="true" />
+          </button>
+        </div>
+      )}
       {toast && <Toast key={toast.key} message={toast.message} type={toast.type} onClose={closeToast} />}
     </>
   );
