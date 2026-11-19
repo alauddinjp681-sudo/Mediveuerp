@@ -39,7 +39,7 @@ export function useSubscriptionTimer(data) {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 30000);
+    const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
 
@@ -48,6 +48,7 @@ export function useSubscriptionTimer(data) {
     days: Math.floor(diff / DAY),
     hours: Math.floor((diff / (60 * 60 * 1000)) % 24),
     minutes: Math.floor((diff / 60000) % 60),
+    seconds: Math.floor((diff / 1000) % 60),
     isExpired: diff <= 0,
   };
   return { ...info, timeLeft, isUrgent: timeLeft.days <= 3 };

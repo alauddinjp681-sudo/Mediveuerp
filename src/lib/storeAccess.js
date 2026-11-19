@@ -4,15 +4,15 @@ import { db } from '../firebase';
 export const STORE_ROLES = ['owner', 'manager', 'worker', 'accountant'];
 
 export const ROLE_LABELS = {
-  owner: 'Owner',
+  owner: 'Shop Owner',
   manager: 'Manager',
-  worker: 'Worker / Staff',
+  worker: 'Worker (Staff)',
   accountant: 'Accountant / Client (read-only)',
 };
 
 export const ROLE_VIEWS = {
-  owner: ['dashboard', 'billing', 'inventory', 'customers', 'suppliers', 'supplierLedger', 'purchaseEntry', 'reports', 'plans', 'referrals', 'settings'],
-  manager: ['dashboard', 'billing', 'inventory', 'customers', 'suppliers', 'supplierLedger', 'purchaseEntry', 'reports', 'referrals', 'settings'],
+  owner: ['dashboard', 'billing', 'inventory', 'customers', 'suppliers', 'supplierLedger', 'purchaseEntry', 'reports', 'team', 'plans', 'referrals', 'settings'],
+  manager: ['dashboard', 'billing', 'inventory', 'customers', 'suppliers', 'supplierLedger', 'purchaseEntry', 'reports', 'referrals'],
   worker: ['dashboard', 'billing', 'inventory', 'customers'],
   accountant: ['dashboard', 'billing', 'customers', 'suppliers', 'supplierLedger', 'reports'],
 };
