@@ -113,8 +113,36 @@ jobs:
       - name: Build signed release APK and Play Store AAB
         working-directory: android
         run: |
+          set -Eeuo pipefail
           chmod +x gradlew
-          ./gradlew --stacktrace assembleRelease bundleRelease
+          echo "Java runtime:"
+          java -version
+          echo "Android SDK: ${ANDROID_HOME:-${ANDROID_SDK_ROOT:-not set}}"
+          ./gradlew --version
+          ./gradlew --no-daemon --stacktrace --console=plain assembleRelease bundleRelease
+
+      - name: Verify release artifacts and signatures
+        working-directory: android
+        run: |
+          set -Eeuo pipefail
+          apk="app/build/outputs/apk/release/app-release.apk"
+          aab="app/build/outputs/bundle/release/app-release.aab"
+          apksigner="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools/36.0.0/apksigner"
+          for artifact in "$apk" "$aab"; do
+            if [ ! -s "$artifact" ]; then
+              echo "::error title=Missing release artifact::$artifact was not created or is empty."
+              exit 1
+            fi
+            ls -lh "$artifact"
+          done
+          if [ ! -x "$apksigner" ]; then
+            echo "::error title=Android SDK tool missing::Could not find apksigner at $apksigner. Check the Android SDK build-tools installation."
+            exit 1
+          fi
+          echo "Verifying APK signature..."
+          "$apksigner" verify --verbose --print-certs "$apk"
+          echo "Verifying AAB JAR signature..."
+          jarsigner -verify "$aab"
 
       - name: Upload signed release APK
         uses: actions/upload-artifact@v4
