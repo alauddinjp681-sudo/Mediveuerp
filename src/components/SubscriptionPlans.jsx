@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { ArrowRight, Check, Crown, ShieldCheck, Sparkles } from 'lucide-react';
 import { auth } from '../firebase';
+import { apiUrl, parseApiResponse } from '../lib/api';
+import { sessionStore } from '../lib/sessionStore';
 import { Button, Card, Field, PageHeader } from './ui';
 
 const PLAN_CARDS = [
@@ -22,7 +24,15 @@ function loadRazorpay() {
 }
 
 export default function SubscriptionPlans({ user, userData, showToast, navigate }) {
-  const [referralCode, setReferralCode] = useState(() => new URLSearchParams(window.location.search).get('ref') || '');
+  const [referralCode, setReferralCode] = useState(() => {
+    const queryCode = new URLSearchParams(window.location.search).get('ref') || '';
+    try {
+      const saved = JSON.parse(sessionStore.getItem('mediveu-owner-referral-code') || 'null');
+      return saved?.email === String(user?.email || '').trim().toLowerCase() ? saved.code || '' : queryCode;
+    } catch {
+      return queryCode;
+    }
+  });
   const [checkoutPlan, setCheckoutPlan] = useState('');
 
   const startTrial = () => {
@@ -50,12 +60,12 @@ export default function SubscriptionPlans({ user, userData, showToast, navigate 
     setCheckoutPlan(planId);
     try {
       const token = await authUser.getIdToken();
-      const response = await fetch('/api/create-order', {
+      const response = await fetch(apiUrl('/api/create-order'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ planId, referralCode: referralCode.trim() || undefined }),
       });
-      const order = await response.json();
+      const order = await parseApiResponse(response, 'Payment service returned an invalid response. Check your connection and retry.');
       if (!response.ok) throw new Error(order.error || 'Could not start checkout.');
       await loadRazorpay();
       const checkout = new window.Razorpay({
@@ -72,14 +82,15 @@ export default function SubscriptionPlans({ user, userData, showToast, navigate 
             const authUser = auth.currentUser;
             if (!authUser) throw new Error('Your login session has expired. Please log in again. Do not pay again; contact support if you were charged.');
             const verifyToken = await authUser.getIdToken();
-            const verifyResponse = await fetch('/api/verify-payment', {
+            const verifyResponse = await fetch(apiUrl('/api/verify-payment'), {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${verifyToken}` },
               body: JSON.stringify(payment),
             });
-            const result = await verifyResponse.json();
+            const result = await parseApiResponse(verifyResponse, 'Payment verification service returned an invalid response. Please contact support before trying to pay again.');
             if (!verifyResponse.ok) throw new Error(result.error || 'Payment verification failed.');
             showToast(result.referralRewardDays ? `Payment verified. Your referrer earned ${result.referralRewardDays} reward days.` : 'Payment verified. Your subscription is active.');
+            sessionStore.removeItem('mediveu-owner-referral-code');
             setReferralCode('');
           } catch (error) {
             showToast(error.message || 'Payment was received but could not be verified. Do not pay again; contact support.', 'error');

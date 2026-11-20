@@ -271,24 +271,35 @@ function ForgotPassword({ setTab, showToast }) {
 }
 
 function Register({ setTab, showToast }) {
-  const [form, setForm] = useState({ storeName: '', phone: '', email: '', password: '', invitationCode: '' });
+  const [form, setForm] = useState(() => ({
+    storeName: '', phone: '', email: '', password: '', invitationCode: '',
+    ownerReferralCode: new URLSearchParams(window.location.search).get('ref') || '',
+  }));
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true);
+    const invitationCode = form.invitationCode.trim();
+    const ownerReferralCode = invitationCode ? '' : form.ownerReferralCode.trim();
     const registration = {
       storeName: form.storeName.trim(),
       phone: form.phone.trim(),
-      invitationCode: form.invitationCode.trim(),
+      invitationCode,
     };
     sessionStore.setItem('mediveu-registration', JSON.stringify(registration));
+    if (ownerReferralCode) {
+      sessionStore.setItem('mediveu-owner-referral-code', JSON.stringify({ email: form.email.trim().toLowerCase(), code: ownerReferralCode }));
+    } else {
+      sessionStore.removeItem('mediveu-owner-referral-code');
+    }
     try {
       await createUserWithEmailAndPassword(auth, form.email.trim(), form.password);
       showToast('Account created. Your store is being set up now.');
     } catch (err) {
       sessionStore.removeItem('mediveu-registration');
+      sessionStore.removeItem('mediveu-owner-referral-code');
       showToast(authError(err), 'error');
     } finally {
       setBusy(false);
@@ -298,7 +309,11 @@ function Register({ setTab, showToast }) {
   return (
     <AuthCard title="Create your store account" subtitle="7 days free. No card required.">
       <form onSubmit={submit} className="space-y-4">
-        <Field label="Store invitation code (optional)" value={form.invitationCode} onChange={set('invitationCode')} autoComplete="off" placeholder="Paste the code shared by your store owner" />
+        <Field label="Staff / team invitation code (optional)" id="team-invitation-code" value={form.invitationCode} onChange={set('invitationCode')} autoComplete="off" placeholder="For joining an existing store as a teammate" />
+        {!form.invitationCode.trim() && <>
+          <Field label="Owner referral code (optional)" id="owner-referral-code" value={form.ownerReferralCode} onChange={set('ownerReferralCode')} autoComplete="off" placeholder="MEDI-…" />
+          <p className="-mt-2 text-xs text-slate-500">For tracking owner referrals and rewards only. It never signs you in or grants store access.</p>
+        </>}
         <Field label="Store Name" value={form.storeName} onChange={set('storeName')} required={!form.invitationCode.trim()} placeholder={form.invitationCode.trim() ? 'Not needed when joining a store' : ''} />
         <Field label="Mobile" type="tel" inputMode="tel" value={form.phone} onChange={set('phone')} />
         <Field label="Email" type="email" value={form.email} onChange={set('email')} required autoComplete="email" />
