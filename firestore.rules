@@ -194,6 +194,7 @@ service cloud.firestore {
         function roleCanRead() {
           return isStoreMember(storeId)
             && collectionName in ['settings', 'inventory', 'bills', 'customers', 'suppliers', 'purchases', 'transactions', 'supplier_transactions', 'payments']
+            && (collectionName != 'bills' || hasRole(storeId, ['owner', 'manager', 'accountant']) || (hasRole(storeId, ['worker']) && resource.data.get('createdBy', '') == request.auth.uid))
             && (collectionName != 'suppliers' || hasRole(storeId, ['owner', 'manager', 'accountant']))
             && (collectionName != 'transactions' || hasRole(storeId, ['owner', 'manager', 'accountant']))
             && (collectionName != 'supplier_transactions' || hasRole(storeId, ['owner', 'manager', 'accountant']))
@@ -262,7 +263,11 @@ service cloud.firestore {
         allow delete: if roleCanDelete();
 
         match /events/{eventId} {
-          allow read: if isStoreMember(storeId);
+          allow read: if isStoreMember(storeId)
+            && (hasRole(storeId, ['owner', 'manager', 'accountant'])
+              || (collectionName == 'bills'
+                && hasRole(storeId, ['worker'])
+                && get(/databases/$(database)/documents/stores/$(storeId)/bills/$(documentId)).data.get('createdBy', '') == request.auth.uid));
           allow create: if collectionName == 'bills'
             && hasRole(storeId, ['owner', 'manager', 'worker'])
             && request.resource.data.actorUid == request.auth.uid

@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { Eye, Monitor, Smartphone, X } from 'lucide-react';
-import { collection, doc, onSnapshot } from 'firebase/firestore';
+import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
 import { auth, db, firebaseConfigError } from './firebase';
 import { storeCollection, storeDocument } from './lib/storeAccess';
 import { setupStoreForUser } from './lib/storeSetup';
@@ -167,7 +167,11 @@ function AuthenticatedApp() {
           setSettings(next);
         }, onErr('settings')));
         unsubs.push(onSnapshot(storeCollection(storeId, 'inventory'), (snapshot) => setInventory(docsOf(snapshot)), onErr('inventory')));
-        unsubs.push(onSnapshot(storeCollection(storeId, 'bills'), (snapshot) => setBills(docsOf(snapshot)), onErr('bills')));
+        const billsRef = storeCollection(storeId, 'bills');
+        const billsQuery = context.role === 'worker'
+          ? query(billsRef, where('createdBy', '==', user.uid))
+          : billsRef;
+        unsubs.push(onSnapshot(billsQuery, (snapshot) => setBills(docsOf(snapshot)), onErr('bills')));
         unsubs.push(onSnapshot(storeCollection(storeId, 'customers'), (snapshot) => setCustomers(docsOf(snapshot)), onErr('customers')));
       } catch (error) {
         const described = describeSetupError(error);

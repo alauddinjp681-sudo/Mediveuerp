@@ -21,7 +21,7 @@ import {
 } from '../../lib/invoice';
 import { formatMoney, todayISO } from '../../lib/format';
 import { isPlanBlocked } from '../../lib/plan';
-import { ACCENTS, getTemplate } from '../invoice-templates';
+import { ACCENTS, getTemplate, TEMPLATES } from '../invoice-templates';
 import InvoicePreview from '../invoice-templates/InvoicePreview';
 import ItemsEditor, { fromInventory } from './ItemsEditor';
 import VoiceBillingAssistant from './VoiceBillingAssistant';
@@ -87,6 +87,10 @@ function Counter({
 }) {
   const general = userData.settings?.general || {};
   const settings = userData.settings?.invoice || {};
+  const templateChoices = Array.isArray(settings.allowedTemplates)
+    ? TEMPLATES.filter((template) => settings.allowedTemplates.includes(template.id))
+    : TEMPLATES;
+  const defaultTemplate = templateChoices.find((template) => template.id === settings.defaultTemplate)?.id || templateChoices[0]?.id || 'pharma';
   const [previous, setPrevious] = useState(selected);
   const canWrite =
     ['owner', 'manager', 'worker'].includes(user.role) &&
@@ -96,7 +100,7 @@ function Counter({
       (previous.status !== 'draft' || previous.createdBy !== user.uid)
     );
   const [templateId, setTemplate] = useState(
-    selected?.templateName || settings.defaultTemplate || 'pharma',
+    selected?.templateName || defaultTemplate,
   );
   const [accent, setAccent] = useState(
     selected?.options?.accent || settings.accent || ACCENTS[0],
@@ -118,8 +122,10 @@ function Counter({
     placeOfSupply: general.stateName || '',
     ...selected?.invoiceDetails,
   });
-  const number =
-    invoice.invoiceNumber ?? nextInvoiceNumber(bills, settings.prefix || 'INV');
+  const workerPrefix = user.role === 'worker'
+    ? `${settings.prefix || 'INV'}-${user.uid.slice(0, 4).toUpperCase()}`
+    : settings.prefix || 'INV';
+  const number = invoice.invoiceNumber ?? nextInvoiceNumber(bills, workerPrefix);
   const [items, setItems] = useState(() =>
     selected?.items?.length
       ? selected.items.map((i) => ({
@@ -514,6 +520,7 @@ function Counter({
             if (canWrite) setDirty(true);
           }}
           sampleDoc={docData}
+          templates={templateChoices}
         />
       )}
     </div>

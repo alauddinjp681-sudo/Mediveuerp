@@ -5,7 +5,7 @@ import { TEMPLATES, ACCENTS } from '../invoice-templates';
 
 const THUMB_W = 200;
 
-export default function TemplatePicker({ isOpen, onClose, value, onChange, accent, onAccentChange, sampleDoc }) {
+export default function TemplatePicker({ isOpen, onClose, value, onChange, accent, onAccentChange, sampleDoc, templates = TEMPLATES }) {
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Choose Bill Template" size="xl">
       <div className="flex flex-wrap items-center gap-3 mb-5">
@@ -22,7 +22,7 @@ export default function TemplatePicker({ isOpen, onClose, value, onChange, accen
         ))}
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-        {TEMPLATES.map((t) => {
+        {templates.map((t) => {
           const scale = THUMB_W / t.width;
           const active = value === t.id;
           const { Component } = t;
