@@ -58,6 +58,9 @@ jobs:
       - name: Prepare release signing keystore
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
           keystore_base64="$(printf '%s' "$ANDROID_KEYSTORE_BASE64" | tr -d '[:space:]')"
@@ -91,10 +94,6 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          if [ -z "$ANDROID_KEYSTORE_PASSWORD" ] || [ -z "$ANDROID_KEY_ALIAS" ] || [ -z "$ANDROID_KEY_PASSWORD" ]; then
-            echo "Missing one or more required GitHub Actions Android signing secrets. See android/RELEASE_SIGNING.md."
-            exit 1
-          fi
           chmod +x gradlew
           ./gradlew --no-daemon --stacktrace assembleRelease bundleRelease
 
@@ -111,3 +110,4 @@ jobs:
       - name: Remove temporary signing keystore
         if: always()
         run: rm -f "$RUNNER_TEMP/mediveu-release.jks"
+        
