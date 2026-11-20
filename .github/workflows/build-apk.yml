@@ -58,16 +58,27 @@ jobs:
       - name: Prepare release signing keystore
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
           if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
             echo "Missing required GitHub Actions secret: ANDROID_KEYSTORE_BASE64 (the existing release keystore, Base64-encoded)."
             exit 1
           fi
+          if [ -z "$ANDROID_KEYSTORE_PASSWORD" ] || [ -z "$ANDROID_KEY_ALIAS" ] || [ -z "$ANDROID_KEY_PASSWORD" ]; then
+            echo "Missing one or more required GitHub Actions Android signing secrets. See android/RELEASE_SIGNING.md."
+            exit 1
+          fi
+
           umask 077
           keystore_path="$RUNNER_TEMP/mediveu-release.jks"
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore_path"
+          clean_b64="$(printf '%s' "$ANDROID_KEYSTORE_BASE64" | tr -d '[:space:]')"
+          printf '%s' "$clean_b64" | base64 --decode > "$keystore_path"
           test -s "$keystore_path"
+          keytool -list -keystore "$keystore_path" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" >/dev/null
+
           printf 'ANDROID_KEYSTORE_PATH=%s\n' "$keystore_path" >> "$GITHUB_ENV"
 
       - name: Build signed release APK and Play Store AAB
@@ -78,10 +89,6 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          if [ -z "$ANDROID_KEYSTORE_PASSWORD" ] || [ -z "$ANDROID_KEY_ALIAS" ] || [ -z "$ANDROID_KEY_PASSWORD" ]; then
-            echo "Missing one or more required GitHub Actions Android signing secrets. See android/RELEASE_SIGNING.md."
-            exit 1
-          fi
           chmod +x gradlew
           ./gradlew --no-daemon --stacktrace assembleRelease bundleRelease
 
@@ -98,3 +105,4 @@ jobs:
       - name: Remove temporary signing keystore
         if: always()
         run: rm -f "$RUNNER_TEMP/mediveu-release.jks"
+        
