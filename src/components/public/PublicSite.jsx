@@ -5,6 +5,7 @@ import { Receipt, Package, WifiOff, Smartphone, LayoutTemplate, BarChart3, Shiel
 import { auth } from '../../firebase';
 import { sessionStore } from '../../lib/sessionStore';
 import { BrandMark, Button, Card, Field, cn } from '../ui';
+import LegalDocuments from '../LegalDocuments';
 
 const FEATURES = [
   { icon: Receipt, title: 'Fast GST Billing', text: 'Keyboard-first billing (F2 save, F4 print) with barcode scan, CGST/SGST/IGST and auto amount in words.' },
@@ -183,7 +184,7 @@ function Contact() {
   );
 }
 
-function AuthCard({ title, subtitle, children }) {
+function AuthCard({ title, subtitle, children, setTab }) {
   return (
     <section className="auth-scene">
       <div className="auth-layout">
@@ -203,6 +204,10 @@ function AuthCard({ title, subtitle, children }) {
           <p className="auth-subtitle">{subtitle}</p>
           {children}
           <div className="auth-footer"><ShieldCheck size={14} /> Secure access to your store workspace</div>
+          <nav aria-label="Legal information" className="mt-4 flex flex-wrap justify-center gap-x-4 gap-y-2 text-xs">
+            <button type="button" onClick={() => setTab?.('privacy')} className="text-slate-400 underline-offset-4 hover:text-brand-sky hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-sky rounded">Privacy Policy</button>
+            <button type="button" onClick={() => setTab?.('terms')} className="text-slate-400 underline-offset-4 hover:text-brand-sky hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-sky rounded">Terms &amp; Conditions</button>
+          </nav>
         </Card>
       </div>
     </section>
@@ -227,7 +232,7 @@ function Login({ setTab, showToast }) {
   };
 
   return (
-    <AuthCard title="Login to your store" subtitle="Welcome back to MEDIVEU ERP">
+    <AuthCard title="Login to your store" subtitle="Welcome back to MEDIVEU ERP" setTab={setTab}>
       <form onSubmit={submit} className="space-y-4">
         <Field label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
         <Field label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" />
@@ -260,7 +265,7 @@ function ForgotPassword({ setTab, showToast }) {
   };
 
   return (
-    <AuthCard title="Reset your password" subtitle="We will email a secure link to get you back into your store.">
+    <AuthCard title="Reset your password" subtitle="We will email a secure link to get you back into your store." setTab={setTab}>
       <form onSubmit={submit} className="space-y-4">
         <Field label="Account email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" />
         <Button type="submit" className="w-full" disabled={busy}>{busy ? 'Sending secure link...' : 'Send reset link'} <ArrowRight size={16} /></Button>
@@ -307,7 +312,7 @@ function Register({ setTab, showToast }) {
   };
 
   return (
-    <AuthCard title="Create your store account" subtitle="7 days free. No card required.">
+    <AuthCard title="Create your store account" subtitle="7 days free. No card required." setTab={setTab}>
       <form onSubmit={submit} className="space-y-4">
         <Field label="Staff / team invitation code (optional)" id="team-invitation-code" value={form.invitationCode} onChange={set('invitationCode')} autoComplete="off" placeholder="For joining an existing store as a teammate" />
         {!form.invitationCode.trim() && <>
@@ -330,7 +335,7 @@ export default function PublicSite({ showToast, tab, setTab }) {
   useEffect(() => {
     if (new URLSearchParams(window.location.search).has('ref') && window.location.hash === '#register' && tab !== 'register') setTab('register');
   }, [tab, setTab]);
-  const current = ['home', 'features', 'pricing', 'contact', 'login', 'register', 'forgot'].includes(tab) ? tab : 'home';
+  const current = ['home', 'features', 'pricing', 'contact', 'login', 'register', 'forgot', 'privacy', 'terms'].includes(tab) ? tab : 'home';
   const goTab = (t) => { setTab(t); setMenu(false); window.scrollTo(0, 0); };
 
   const page = {
@@ -341,6 +346,8 @@ export default function PublicSite({ showToast, tab, setTab }) {
     login: <Login setTab={goTab} showToast={showToast} />,
     register: <Register setTab={goTab} showToast={showToast} />,
     forgot: <ForgotPassword setTab={goTab} showToast={showToast} />,
+    privacy: <LegalDocuments type="privacy" onBack={goTab} />,
+    terms: <LegalDocuments type="terms" onBack={goTab} />,
   }[current];
 
   return (
@@ -375,6 +382,10 @@ export default function PublicSite({ showToast, tab, setTab }) {
         <div className="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-slate-500">
           <BrandMark size="sm" />
           <span>&copy; {new Date().getFullYear()} MEDIVEU ERP. All rights reserved.</span>
+          <nav aria-label="Legal information" className="flex gap-4">
+            <button type="button" onClick={() => goTab('privacy')} className="hover:text-brand-sky focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-sky rounded">Privacy Policy</button>
+            <button type="button" onClick={() => goTab('terms')} className="hover:text-brand-sky focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-sky rounded">Terms &amp; Conditions</button>
+          </nav>
         </div>
       </footer>
     </div>

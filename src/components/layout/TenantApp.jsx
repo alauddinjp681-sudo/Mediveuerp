@@ -3,6 +3,7 @@ import { Home, Receipt, Package, Users, Truck, BarChart3, Crown, Settings, LogOu
 import { BrandMark, Spinner, cn } from '../ui';
 import { useSubscriptionTimer } from '../../lib/plan';
 import { canAccessView, canEditInventory, canManageBills, canManageStore, ROLE_LABELS } from '../../lib/storeAccess';
+import LegalDocuments from '../LegalDocuments';
 
 const Dashboard = lazy(() => import('../Dashboard'));
 const BillingPOS = lazy(() => import('../billing/BillingPOS'));
@@ -81,11 +82,11 @@ export default function TenantApp({ user = {}, userData = {}, path = 'dashboard'
   const ViewIcon = siteView === 'mobile' ? Monitor : Smartphone;
 
   useEffect(() => {
-    if (!canAccessView(role, path)) setPath('dashboard');
+    if (!['privacy', 'terms'].includes(path) && !canAccessView(role, path)) setPath('dashboard');
   }, [role, path, setPath]);
 
   const go = (id, extra) => {
-    if (!canAccessView(role, id)) return;
+    if (!['privacy', 'terms'].includes(id) && !canAccessView(role, id)) return;
     if (id === 'billing') setEditBill(extra || null);
     if (id === 'purchaseEntry' || id === 'supplierLedger') setActiveSupplier(extra || null);
     setPath(id);
@@ -107,7 +108,9 @@ export default function TenantApp({ user = {}, userData = {}, path = 'dashboard'
       case 'plans': return <SubscriptionPlans user={user} userData={userData} showToast={showToast} navigate={(v, p) => (v === 'public' ? navigate(v, p) : go(p === 'pos' ? 'billing' : p || 'dashboard'))} />;
       case 'referrals': return <ReferralCenter user={user} userData={userData} showToast={showToast} />;
       case 'team': return <TeamAccess user={user} showToast={showToast} />;
-      case 'settings': return <SettingsView user={user} userData={userData} data={safeData} showToast={showToast} />;
+      case 'settings': return <SettingsView user={user} userData={userData} data={safeData} showToast={showToast} navigate={go} />;
+      case 'privacy': return <LegalDocuments type="privacy" embedded onBack={(next) => go(next || 'settings')} />;
+      case 'terms': return <LegalDocuments type="terms" embedded onBack={(next) => go(next || 'settings')} />;
       default: return <Dashboard userData={userData} data={safeData} go={go} />;
     }
   })();
