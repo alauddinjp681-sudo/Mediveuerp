@@ -21,7 +21,7 @@ const GENERAL_FIELDS = [
 
 const BANK_FIELDS = [['bankName', 'Bank Name'], ['accountNo', 'Account No.'], ['ifsc', 'IFSC'], ['branch', 'Branch']];
 
-export default function SettingsView({ user, userData, data, showToast }) {
+export default function SettingsView({ user, userData, data, showToast, navigate }) {
   const s = userData?.settings || {};
   const [general, setGeneral] = useState(() => ({ ...Object.fromEntries(GENERAL_FIELDS.map(([k]) => [k, ''])), ...Object.fromEntries(BANK_FIELDS.map(([k]) => [k, ''])), terms: '', ...(s.general || {}) }));
   const [invoice, setInvoice] = useState(() => ({ prefix: 'INV', defaultTemplate: 'pharma', allowedTemplates: TEMPLATES.map((template) => template.id), ...(s.invoice || {}) }));
@@ -145,6 +145,15 @@ export default function SettingsView({ user, userData, data, showToast }) {
               ))}
             </div>
           </fieldset>
+        </div>
+      </Card>
+
+      <Card className="p-5">
+        <h2 className="font-bold text-white mb-1">Legal information</h2>
+        <p className="mb-3 text-sm text-slate-400">Review how account and store data is handled, and the terms for using MEDIVEU ERP.</p>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="secondary" onClick={() => navigate?.('privacy')}>Privacy Policy</Button>
+          <Button type="button" variant="secondary" onClick={() => navigate?.('terms')}>Terms &amp; Conditions</Button>
         </div>
       </Card>
 
