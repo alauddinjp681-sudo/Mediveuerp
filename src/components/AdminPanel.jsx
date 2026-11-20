@@ -189,8 +189,8 @@ export default function AdminPanel({ navigate }) {
   const totalRevenue = (monthlyCount * 249) + (yearlyCount * 2799);
 
   return (
-    <div className="flex h-screen bg-slate-950 text-slate-100 overflow-hidden font-sans relative">
-      <aside className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col">
+    <div className="flex h-dvh bg-slate-950 text-slate-100 overflow-hidden font-sans relative">
+      <aside className="hidden md:flex w-64 shrink-0 bg-slate-900 border-r border-slate-800 flex-col">
         <div className="h-16 flex items-center px-6 border-b border-slate-800 text-red-500 font-bold text-lg gap-2">
           <img src={logo} alt="Logo" className="h-8 w-auto object-contain rounded-md shadow-sm" />
           <span className="truncate">Super Admin</span>
@@ -208,15 +208,20 @@ export default function AdminPanel({ navigate }) {
         </div>
       </aside>
 
-      <main className="flex-1 p-8 overflow-y-auto bg-slate-950">
-        <div className="flex justify-between items-center mb-8">
+      <main className="min-h-0 min-w-0 flex-1 overflow-auto bg-slate-950 p-4 sm:p-6 lg:p-8">
+        <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
           <div>
             <h1 className="text-3xl font-bold text-white">System Control Panel</h1>
             <p className="text-slate-400 text-sm mt-1">Manage all registered medical stores, subscription plans, and access limits.</p>
           </div>
-          <button onClick={() => setLoading(true)} className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2 rounded-lg text-sm font-medium border border-slate-700 cursor-pointer transition-all">
-            <RefreshCw size={16} className={loading ? "animate-spin" : ""} /> Refresh Data
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button onClick={() => navigate('public', 'home')} className="md:hidden flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-medium text-slate-200">
+              <LogOut size={16} /> Exit Admin
+            </button>
+            <button onClick={() => setLoading(true)} className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2 rounded-lg text-sm font-medium border border-slate-700 cursor-pointer transition-all">
+              <RefreshCw size={16} className={loading ? "animate-spin" : ""} /> Refresh Data
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
@@ -238,7 +243,7 @@ export default function AdminPanel({ navigate }) {
           </div>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 mb-6 flex items-center justify-between shadow-lg">
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 mb-6 flex flex-wrap items-center justify-between gap-4 shadow-lg">
           <div className="flex items-center gap-3">
             <Shield className="text-red-400" size={20} />
             <div>
@@ -258,9 +263,9 @@ export default function AdminPanel({ navigate }) {
         </div>
 
         <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-lg">
-          <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+          <div className="p-4 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
             <h3 className="font-semibold text-white">Tenant Stores Directory</h3>
-            <div className="relative w-72">
+            <div className="relative w-full sm:w-72">
               <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
               <input type="text" placeholder="Search store or email..." className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-9 pr-4 py-2 text-sm text-white focus:outline-none focus:border-red-500" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}/>
             </div>

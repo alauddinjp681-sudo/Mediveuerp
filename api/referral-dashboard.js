@@ -1,6 +1,7 @@
-import { authenticate, db, handleError, method, requireOwner, respond } from '../server/billing.js';
+import { authenticate, db, handleCors, handleError, method, requireOwner, respond } from '../server/billing.js';
 
 export default async function handler(req, res) {
+  if (handleCors(req, res)) return;
   if (!method(req, res, 'GET')) return;
   try {
     const uid = await authenticate(req);

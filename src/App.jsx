@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { Eye, Monitor, Smartphone, X } from 'lucide-react';
 import { collection, doc, onSnapshot } from 'firebase/firestore';
@@ -62,12 +62,16 @@ function AuthenticatedApp() {
   const showToast = useCallback((message, type = 'success') => setToast({ message, type, key: Date.now() }), []);
   const closeToast = useCallback(() => setToast(null), []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const viewport = document.querySelector('meta[name="viewport"]');
     if (!viewport) return;
+    const screenWidth = window.screen?.width || window.innerWidth;
+    const desktopScale = Math.max(0.25, Math.min(1, screenWidth / 1024));
+    const initialScale = siteView === 'desktop' ? desktopScale : 1;
+    const zoomOptions = `initial-scale=${initialScale}, minimum-scale=0.25, maximum-scale=5, user-scalable=yes, viewport-fit=cover`;
     viewport.content = siteView === 'desktop'
-      ? 'width=1024, initial-scale=1, viewport-fit=cover'
-      : 'width=device-width, initial-scale=1.0, viewport-fit=cover';
+      ? `width=1024, ${zoomOptions}`
+      : `width=device-width, ${zoomOptions}`;
     document.documentElement.classList.toggle('site-view-desktop', siteView === 'desktop');
     sessionStore.setItem('mediveu-site-view', siteView);
   }, [siteView]);

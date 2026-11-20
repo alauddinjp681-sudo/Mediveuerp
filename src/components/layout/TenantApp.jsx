@@ -181,7 +181,7 @@ export default function TenantApp({ user = {}, userData = {}, path = 'dashboard'
             Offline mode: changes will sync automatically
           </div>
         )}
-        <main id="main-scroll" className="flex-1 overflow-y-auto p-4 md:p-6 pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-6">
+        <main id="main-scroll" className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 md:p-6 pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-6">
           <Suspense fallback={<div className="py-24 flex justify-center"><Spinner /></div>}>{page}</Suspense>
         </main>
       </div>
