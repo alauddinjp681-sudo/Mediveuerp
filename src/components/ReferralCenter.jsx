@@ -18,7 +18,7 @@ async function fetchReferralDashboard() {
 export default function ReferralCenter({ user, userData, showToast }) {
   const { data, error, isLoading } = useSWR(user?.uid ? ['referral-dashboard', user.uid] : null, fetchReferralDashboard);
   const referralCode = user?.uid ? `MEDI-${user.uid}` : '';
-  const referralUrl = typeof window !== 'undefined' ? `${window.location.origin}/?ref=${encodeURIComponent(referralCode)}` : '';
+  const referralUrl = typeof window !== 'undefined' ? `${window.location.origin}/?ref=${encodeURIComponent(referralCode)}#register` : '';
   const verified = Number(data?.verified || 0);
   const progressCount = verified > 0 ? ((verified - 1) % 3) + 1 : 0;
   const rewardDaysEarned = (Number(data?.rewardMonthsEarned) || 0) * 30;

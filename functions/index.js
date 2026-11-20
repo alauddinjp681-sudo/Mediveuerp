@@ -53,6 +53,7 @@ exports.attachReferral = onCall(async (request) => {
   }
 
   const db = getFirestore();
+  await Promise.all([requireActiveOwner(db, uid), requireActiveOwner(db, referrerUid)]);
   const userRef = db.doc(`users/${uid}`);
   const referrerRef = db.doc(`users/${referrerUid}`);
   const referralRef = db.doc(`referrals/${referrerUid}__${uid}`);
@@ -87,6 +88,7 @@ exports.getReferralDashboard = onCall(async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in to view referral rewards.');
   const uid = request.auth.uid;
   const db = getFirestore();
+  await requireActiveOwner(db, uid);
   const [statsSnap, referralsSnap] = await Promise.all([
     db.doc(`referralStats/${uid}`).get(),
     db.collection('referrals').where('referrerUid', '==', uid).limit(100).get(),
@@ -109,12 +111,8 @@ exports.createSubscriptionOrder = onCall({ secrets: [razorpayKeyId, razorpayKeyS
   if (!plan) throw new HttpsError('invalid-argument', 'Choose a valid subscription plan.');
 
   const db = getFirestore();
-  const userSnap = await db.doc(`users/${request.auth.uid}`).get();
-  if (!userSnap.exists || !userSnap.get('storeId')) throw new HttpsError('failed-precondition', 'Your store profile is not ready.');
-  const memberSnap = await db.doc(`stores/${userSnap.get('storeId')}/members/${request.auth.uid}`).get();
-  if (!memberSnap.exists || memberSnap.get('role') !== 'owner' || memberSnap.get('status') !== 'active') {
-    throw new HttpsError('permission-denied', 'Only the store owner can manage the subscription.');
-  }
+  const { userSnap } = await requireActiveOwner(db, request.auth.uid);
+
   const referrerUid = String(userSnap.get('referredBy') || '');
   const { keyId } = razorpayCredentials();
   let order;
@@ -169,31 +167,48 @@ exports.confirmSubscriptionPayment = onCall({ secrets: [razorpayKeyId, razorpayK
   const uid = request.auth.uid;
   const planId = String(order.notes?.planId || '');
   const plan = plans[planId];
-  if (!plan || order.notes?.userId !== uid || order.amount !== plan.amount || payment.order_id !== orderId || payment.amount !== plan.amount || payment.currency !== 'INR' || payment.status !== 'captured') {
+  const referrerUid = String(order.notes?.referrerUid || '');
+  if (!plan || order.notes?.userId !== uid || order.amount !== plan.amount || order.currency !== 'INR' || order.status !== 'paid'
+    || payment.order_id !== orderId || payment.amount !== plan.amount || payment.currency !== 'INR' || payment.status !== 'captured'
+    || (referrerUid && (!/^[A-Za-z0-9_-]{20,128}$/.test(referrerUid) || referrerUid === uid))) {
     throw new HttpsError('failed-precondition', 'The captured payment does not match this account and subscription plan.');
   }
 
   const db = getFirestore();
+  const { storeId } = await requireActiveOwner(db, uid);
   const userRef = db.doc(`users/${uid}`);
-  const storeRef = db.doc(`stores/${uid}`);
+  const storeRef = db.doc(`stores/${storeId}`);
+  const memberRef = db.doc(`stores/${storeId}/members/${uid}`);
   const paymentRef = db.doc(`users/${uid}/payments/${orderId}`);
-  const referrerUid = String(order.notes?.referrerUid || '');
   const referralRef = referrerUid ? db.doc(`referrals/${referrerUid}__${uid}`) : null;
   const statsRef = referrerUid ? db.doc(`referralStats/${referrerUid}`) : null;
   const referrerRef = referrerUid ? db.doc(`users/${referrerUid}`) : null;
   const now = Date.now();
 
   const result = await db.runTransaction(async (transaction) => {
-    const [paymentSnap, userSnap, referralSnap, statsSnap, referrerSnap] = await Promise.all([
-      transaction.get(paymentRef), transaction.get(userRef),
+    const [paymentSnap, userSnap, storeSnap, memberSnap, referralSnap, statsSnap, referrerSnap] = await Promise.all([
+      transaction.get(paymentRef), transaction.get(userRef), transaction.get(storeRef), transaction.get(memberRef),
       referralRef ? transaction.get(referralRef) : Promise.resolve(null),
       statsRef ? transaction.get(statsRef) : Promise.resolve(null),
       referrerRef ? transaction.get(referrerRef) : Promise.resolve(null),
     ]);
     if (paymentSnap.exists) return { alreadyProcessed: true, referralReward: false };
     if (!userSnap.exists) throw new HttpsError('not-found', 'Store account not found.');
+    if (!storeSnap.exists || storeSnap.get('ownerUid') !== uid || !memberSnap.exists
+      || memberSnap.get('role') !== 'owner' || memberSnap.get('status') !== 'active') {
+      throw new HttpsError('permission-denied', 'Only the active store owner can activate a subscription.');
+    }
 
     const userData = userSnap.data();
+    let referrerStoreSnap = null;
+    let referrerMemberSnap = null;
+    if (referrerRef && referrerSnap?.exists && referrerSnap.get('storeId')) {
+      const referrerStoreId = String(referrerSnap.get('storeId'));
+      [referrerStoreSnap, referrerMemberSnap] = await Promise.all([
+        transaction.get(db.doc(`stores/${referrerStoreId}`)),
+        transaction.get(db.doc(`stores/${referrerStoreId}/members/${referrerUid}`)),
+      ]);
+    }
     const previousEnd = millis(userData.subscriptionEndsAt);
     const previousStart = millis(userData.createdAt);
     const existingDays = /year|2799/i.test(userData.plan || '') ? 365 : /month|249/i.test(userData.plan || '') ? 30 : 0;
@@ -219,7 +234,12 @@ exports.confirmSubscriptionPayment = onCall({ secrets: [razorpayKeyId, razorpayK
     transaction.set(storeRef, subscriptionProfile, { merge: true });
 
     let referralReward = false;
-    if (referralRef && referralSnap?.exists && userData.referredBy === referrerUid && referralSnap.get('referrerUid') === referrerUid && referralSnap.get('referredUserId') === uid && referralSnap.get('status') === 'pending' && planId === 'monthly' && referrerSnap?.exists) {
+    if (referralRef && referralSnap?.exists && userData.referredBy === referrerUid
+      && referralSnap.get('referrerUid') === referrerUid && referralSnap.get('referredUserId') === uid
+      && referralSnap.get('status') === 'pending' && planId === 'monthly' && referrerSnap?.exists
+      && referrerStoreSnap?.exists && referrerStoreSnap.get('ownerUid') === referrerUid
+      && referrerMemberSnap?.exists && referrerMemberSnap.get('role') === 'owner'
+      && referrerMemberSnap.get('status') === 'active') {
       const qualifiedCount = Number(statsSnap?.get('qualifiedMonthly') || 0) + 1;
       const earnedMonths = Math.floor(qualifiedCount / 3);
       const appliedMonths = Number(statsSnap?.get('rewardMonthsApplied') || 0);
@@ -253,7 +273,7 @@ exports.confirmSubscriptionPayment = onCall({ secrets: [razorpayKeyId, razorpayK
           updatedAt: FieldValue.serverTimestamp(),
         };
         transaction.set(referrerRef, rewardProfile, { merge: true });
-        transaction.set(db.doc(`stores/${referrerUid}`), rewardProfile, { merge: true });
+        transaction.set(db.doc(`stores/${referrerData.storeId}`), rewardProfile, { merge: true });
         referralReward = true;
       }
     }
@@ -288,6 +308,21 @@ function requireOwnerRole(memberSnap) {
   if (!memberSnap.exists || memberSnap.get('status') !== 'active' || memberSnap.get('role') !== 'owner') {
     throw new HttpsError('permission-denied', 'Only the store owner can manage team access.');
   }
+}
+
+async function requireActiveOwner(db, uid) {
+  const userSnap = await db.doc(`users/${uid}`).get();
+  const storeId = String(userSnap.get('storeId') || '');
+  if (!userSnap.exists || !storeId) throw new HttpsError('failed-precondition', 'Your store profile is not ready.');
+  const [storeSnap, memberSnap] = await Promise.all([
+    db.doc(`stores/${storeId}`).get(),
+    db.doc(`stores/${storeId}/members/${uid}`).get(),
+  ]);
+  if (!storeSnap.exists || storeSnap.get('ownerUid') !== uid) {
+    throw new HttpsError('permission-denied', 'Only the active store owner can use owner referral rewards.');
+  }
+  requireOwnerRole(memberSnap);
+  return { userSnap, storeId };
 }
 
 async function acceptInvitation(db, uid, email, rawCode) {
