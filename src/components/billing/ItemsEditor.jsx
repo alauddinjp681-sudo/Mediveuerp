@@ -1,5 +1,5 @@
-import React, { useMemo, useRef, useState } from 'react';
-import { Plus, Trash2, Search, ScanBarcode } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Plus, Trash2, Search, Camera, CameraOff } from 'lucide-react';
 import { calcLine, emptyItem } from '../../lib/invoice';
 import { formatINR, toNumber } from '../../lib/format';
 import { isComposing } from '../ui';
@@ -16,10 +16,84 @@ export const fromInventory = (inv) => ({
   gstPercent: inv.gstPercent ?? 12,
 });
 
+function qrLookupValues(rawValue) {
+  const values = [String(rawValue || '').trim()];
+  try {
+    const parsed = JSON.parse(rawValue);
+    ['barcode', 'code', 'sku', 'medicineId', 'productId', 'id', 'name'].forEach((key) => {
+      if (parsed?.[key] != null) values.push(String(parsed[key]).trim());
+    });
+  } catch {
+    try {
+      const url = new URL(rawValue);
+      ['barcode', 'code', 'sku', 'medicineId', 'productId', 'id', 'name'].forEach((key) => {
+        const value = url.searchParams.get(key);
+        if (value) values.push(value.trim());
+      });
+    } catch {}
+  }
+  return [...new Set(values.filter(Boolean))];
+}
+
 function ProductSearch({ inventory, onPick }) {
   const [term, setTerm] = useState('');
   const [active, setActive] = useState(0);
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState('');
   const inputRef = useRef(null);
+  const videoRef = useRef(null);
+
+  useEffect(() => {
+    if (!scanning) return undefined;
+    let stopped = false;
+    let stream;
+    let timer;
+    const video = videoRef.current;
+    const start = async () => {
+      if (!('BarcodeDetector' in window) || !navigator.mediaDevices?.getUserMedia) {
+        setScanError('QR scanning is not supported here. Enter the code in search instead.');
+        return;
+      }
+      try {
+        const detector = new window.BarcodeDetector();
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+        if (stopped) { stream.getTracks().forEach((track) => track.stop()); return; }
+        video.srcObject = stream;
+        await video.play();
+        const scan = async () => {
+          if (stopped || video.readyState < 2) return;
+          try {
+            const [result] = await detector.detect(video);
+            if (result?.rawValue) {
+              const values = qrLookupValues(result.rawValue).map((value) => value.toLowerCase());
+              const medicine = inventory.find((item) => [item.id, item.name, item.barcode, item.batchNo].some((field) => values.includes(String(field || '').trim().toLowerCase())));
+              if (medicine) {
+                onPick(fromInventory(medicine));
+                setTerm('');
+              } else {
+                setTerm(result.rawValue);
+                setActive(0);
+              }
+              setScanning(false);
+              return;
+            }
+          } catch { setScanError('Could not read that code. Adjust the camera and try again.'); }
+          timer = window.setTimeout(scan, 250);
+        };
+        scan();
+      } catch {
+        setScanError('Camera access was unavailable. Allow camera access or enter the code manually.');
+      }
+    };
+    setScanError('');
+    start();
+    return () => {
+      stopped = true;
+      window.clearTimeout(timer);
+      stream?.getTracks().forEach((track) => track.stop());
+      if (video) video.srcObject = null;
+    };
+  }, [scanning]);
 
   const results = useMemo(() => {
     const q = term.trim().toLowerCase();
@@ -42,8 +116,8 @@ function ProductSearch({ inventory, onPick }) {
     if (e.key === 'Enter' && !isComposing(e)) {
       e.preventDefault();
       if (!term.trim()) return;
-      const code = term.trim().toLowerCase();
-      const exact = inventory.find((i) => [i.barcode, i.batchNo].some((v) => String(v || '').toLowerCase() === code));
+      const codes = qrLookupValues(term).map((value) => value.toLowerCase());
+      const exact = inventory.find((i) => [i.id, i.name, i.barcode, i.batchNo].some((value) => codes.includes(String(value || '').trim().toLowerCase())));
       pick(exact || results[active] || null);
     }
     if (e.key === 'Escape') setTerm('');
@@ -67,7 +141,11 @@ function ProductSearch({ inventory, onPick }) {
         aria-activedescendant={results[active] ? `result-${results[active].id}` : undefined}
         aria-controls="product-results"
       />
-      <ScanBarcode size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500" aria-hidden="true" />
+      <button type="button" onClick={() => setScanning((value) => !value)} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-slate-400 hover:bg-white/10 hover:text-white" aria-label={scanning ? 'Stop QR scanner' : 'Scan medicine QR code'} title={scanning ? 'Stop scanner' : 'Scan QR code'}>
+        {scanning ? <CameraOff size={18} aria-hidden="true" /> : <Camera size={18} aria-hidden="true" />}
+      </button>
+      {scanning && <div className="mt-2 overflow-hidden rounded-xl border border-white/10 bg-black"><video ref={videoRef} muted playsInline className="max-h-64 w-full object-cover" aria-label="Camera view for QR scanning" /></div>}
+      {scanError && <p role="status" className="mt-2 text-xs text-amber-300">{scanError}</p>}
       {term && (
         <ul id="product-results" role="listbox" className="absolute z-30 mt-1 w-full card p-1 shadow-2xl max-h-80 overflow-y-auto bg-ink-850">
           {results.map((inv, idx) => (
