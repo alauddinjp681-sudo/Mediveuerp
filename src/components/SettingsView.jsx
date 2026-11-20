@@ -24,7 +24,20 @@ const BANK_FIELDS = [['bankName', 'Bank Name'], ['accountNo', 'Account No.'], ['
 export default function SettingsView({ user, userData, data, showToast }) {
   const s = userData?.settings || {};
   const [general, setGeneral] = useState(() => ({ ...Object.fromEntries(GENERAL_FIELDS.map(([k]) => [k, ''])), ...Object.fromEntries(BANK_FIELDS.map(([k]) => [k, ''])), terms: '', ...(s.general || {}) }));
-  const [invoice, setInvoice] = useState(() => ({ prefix: 'INV', defaultTemplate: 'pharma', ...(s.invoice || {}) }));
+  const [invoice, setInvoice] = useState(() => ({ prefix: 'INV', defaultTemplate: 'pharma', allowedTemplates: TEMPLATES.map((template) => template.id), ...(s.invoice || {}) }));
+  const allowedTemplates = Array.isArray(invoice.allowedTemplates) ? invoice.allowedTemplates : TEMPLATES.map((template) => template.id);
+  const toggleTemplate = (templateId) => setInvoice((current) => {
+    const currentAllowed = Array.isArray(current.allowedTemplates) ? current.allowedTemplates : TEMPLATES.map((template) => template.id);
+    const nextAllowed = currentAllowed.includes(templateId)
+      ? currentAllowed.filter((id) => id !== templateId)
+      : [...currentAllowed, templateId];
+    if (!nextAllowed.length) return current;
+    return {
+      ...current,
+      allowedTemplates: nextAllowed,
+      defaultTemplate: nextAllowed.includes(current.defaultTemplate) ? current.defaultTemplate : nextAllowed[0],
+    };
+  });
 
   const save = async (e) => {
     e.preventDefault();
@@ -118,8 +131,20 @@ export default function SettingsView({ user, userData, data, showToast }) {
         <div className="grid sm:grid-cols-2 gap-4">
           <Field label="Invoice Prefix" value={invoice.prefix} onChange={(e) => setInvoice((p) => ({ ...p, prefix: e.target.value.toUpperCase().replace(/[^A-Z0-9/]/g, '') }))} />
           <Field as="select" label="Default Template" value={invoice.defaultTemplate} onChange={(e) => setInvoice((p) => ({ ...p, defaultTemplate: e.target.value }))}>
-            {TEMPLATES.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.paper})</option>)}
+            {TEMPLATES.filter((template) => allowedTemplates.includes(template.id)).map((t) => <option key={t.id} value={t.id}>{t.name} ({t.paper})</option>)}
           </Field>
+          <fieldset className="sm:col-span-2">
+            <legend className="field-label">Templates available to staff</legend>
+            <p className="mb-3 text-xs text-slate-500">Choose which print layouts workers can use. At least one template must remain enabled.</p>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {TEMPLATES.map((template) => (
+                <label key={template.id} className="flex items-start gap-2 rounded-lg border border-white/10 bg-ink-950/50 p-3 text-sm text-slate-200">
+                  <input type="checkbox" checked={allowedTemplates.includes(template.id)} disabled={allowedTemplates.length === 1 && allowedTemplates.includes(template.id)} onChange={() => toggleTemplate(template.id)} className="mt-0.5 accent-cyan-400" />
+                  <span>{template.name}<span className="ml-1 text-xs text-slate-500">{template.paper}</span></span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
         </div>
       </Card>
 

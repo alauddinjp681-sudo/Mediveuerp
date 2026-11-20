@@ -145,8 +145,8 @@ export default function TenantApp({ user = {}, userData = {}, path = 'dashboard'
       )}
 
       <div className="flex-1 min-w-0 flex flex-col">
-        <header className="tenant-header shrink-0 flex items-center justify-between gap-3 px-4 md:px-6 border-b border-white/[0.07] bg-ink-950/80 backdrop-blur no-print">
-          <div className="flex items-center gap-3 min-w-0">
+        <header className="tenant-header shrink-0 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 md:px-6 border-b border-white/[0.07] bg-ink-950/80 backdrop-blur no-print">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
             <button onClick={() => setDrawer(true)} className="lg:hidden p-2 -ml-2 text-slate-300" aria-label="Open menu"><Menu size={22} /></button>
             <div className="lg:hidden"><BrandMark size="sm" /></div>
             <div className="hidden lg:block min-w-0">
@@ -154,7 +154,7 @@ export default function TenantApp({ user = {}, userData = {}, path = 'dashboard'
               <div className="text-xs text-slate-500 truncate">{storeName}</div>
             </div>
           </div>
-          <div className="flex items-center gap-1.5 sm:gap-2">
+          <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-1.5 sm:gap-2">
             {showViewToggle && (
               <div className="view-mode-toggle view-mode-toggle-tenant no-print">
                 <button className="view-mode-toggle-action" type="button" onClick={onSwitchSiteView}

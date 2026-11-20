@@ -1,4 +1,7 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { collection, onSnapshot } from 'firebase/firestore';
+import { db } from '../firebase';
+import { storeCollection } from '../lib/storeAccess';
 import { IndianRupee, FileText, Package, Users, AlertTriangle, ArrowRight, Plus, ShieldCheck, Clock } from 'lucide-react';
 import { Card, Button, Badge, cn } from './ui';
 import { formatMoney, formatDate, toMillis, toNumber } from '../lib/format';
@@ -50,6 +53,16 @@ function PlanBanner({ userData, go }) {
 }
 
 export default function Dashboard({ userData = {}, data = {}, go = () => {} }) {
+  const [members, setMembers] = useState([]);
+  useEffect(() => {
+    if (userData.role !== 'owner' || !userData.storeId) {
+      setMembers([]);
+      return undefined;
+    }
+    return onSnapshot(collection(db, 'stores', userData.storeId, 'members'), (snapshot) => {
+      setMembers(snapshot.docs.map((member) => ({ id: member.id, ...member.data() })));
+    });
+  }, [userData.role, userData.storeId]);
   const bills = Array.isArray(data?.bills) ? data.bills.filter(Boolean) : [];
   const inventory = Array.isArray(data?.inventory) ? data.inventory.filter(Boolean) : [];
   const customers = Array.isArray(data?.customers) ? data.customers.filter(Boolean) : [];
@@ -80,6 +93,19 @@ export default function Dashboard({ userData = {}, data = {}, go = () => {} }) {
     return { today, month, total, days, lowStock, expiring, recent };
   }, [bills, inventory]);
 
+  const workerSummary = members
+    .filter((member) => member.status === 'active' && member.role === 'worker')
+    .map((member) => {
+      const created = bills.filter((bill) => bill.createdBy === member.id);
+      const finalized = created.filter((bill) => bill.status !== 'draft' && !['estimate', 'proforma'].includes(bill.invoiceDetails?.docType));
+      return {
+        ...member,
+        billCount: created.length,
+        finalizedCount: finalized.length,
+        billedAmount: finalized.reduce((sum, bill) => sum + toNumber(bill.totals?.grandTotal), 0),
+      };
+    })
+    .sort((a, b) => b.billedAmount - a.billedAmount || String(a.email || a.id).localeCompare(String(b.email || b.id)));
   const max = Math.max(1, ...stats.days.map((d) => d.v));
   const storeName = userData?.settings?.general?.storeName;
 
@@ -94,6 +120,30 @@ export default function Dashboard({ userData = {}, data = {}, go = () => {} }) {
       </div>
 
       {userData?.role === 'owner' && <PlanBanner userData={userData} go={go} />}
+
+      {userData?.role === 'owner' && (
+        <Card className="overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.06] p-5 pb-4">
+            <div>
+              <h2 className="font-bold text-white">Worker activity</h2>
+              <p className="mt-1 text-xs text-slate-400">All active staff · finalized bills and billed totals</p>
+            </div>
+            <Badge tone="info">{workerSummary.length} workers</Badge>
+          </div>
+          <div className="divide-y divide-white/[0.06]">
+            {workerSummary.map((worker) => (
+              <div key={worker.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-white">{worker.email || worker.id}</p>
+                  <p className="mt-1 text-xs text-slate-400">{worker.billCount} bills created · {worker.finalizedCount} finalized</p>
+                </div>
+                <p className="text-sm font-bold tabular text-brand-green">{formatMoney(worker.billedAmount)}</p>
+              </div>
+            ))}
+            {!workerSummary.length && <p className="px-5 py-6 text-center text-sm text-slate-500">No active workers yet.</p>}
+          </div>
+        </Card>
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         <Stat icon={IndianRupee} label="Today" value={formatMoney(stats.today)} sub={`Month ${formatMoney(stats.month)}`} tone="bg-brand-green/15 text-brand-green" />
