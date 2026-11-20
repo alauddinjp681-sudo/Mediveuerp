@@ -2,14 +2,15 @@ import React from 'react';
 import useSWR from 'swr';
 import { Check, Copy, Gift, Share2, ShieldCheck } from 'lucide-react';
 import { auth } from '../firebase';
+import { apiUrl, parseApiResponse } from '../lib/api';
 import { Button, Card, PageHeader } from './ui';
 
 async function fetchReferralDashboard() {
   const authUser = auth.currentUser;
   if (!authUser) throw new Error('Your login session has expired. Please log in again to view referral rewards.');
   const token = await authUser.getIdToken();
-  const response = await fetch('/api/referral-dashboard', { headers: { Authorization: `Bearer ${token}` } });
-  const data = await response.json();
+  const response = await fetch(apiUrl('/api/referral-dashboard'), { headers: { Authorization: `Bearer ${token}` } });
+  const data = await parseApiResponse(response, 'Referral service returned an invalid response. Check your connection and retry.');
   if (!response.ok) throw new Error(data.error || 'Could not load referral rewards.');
   return data;
 }

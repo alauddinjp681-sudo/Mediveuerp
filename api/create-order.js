@@ -1,6 +1,7 @@
-import { authenticate, db, FieldValue, handleError, method, plans, razorpay, requireOwner, respond } from '../server/billing.js';
+import { authenticate, db, FieldValue, handleCors, handleError, method, plans, razorpay, requireOwner, respond } from '../server/billing.js';
 
 export default async function handler(req, res) {
+  if (handleCors(req, res)) return;
   if (!method(req, res, 'POST')) return;
   try {
     const uid = await authenticate(req);

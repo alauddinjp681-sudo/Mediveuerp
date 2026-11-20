@@ -26,6 +26,31 @@ const firebaseApp = getApps()[0] || initializeApp({
 });
 export const db = getFirestore(firebaseApp);
 
+const allowedOrigins = new Set([
+  'https://localhost',
+  'capacitor://localhost',
+  'http://localhost',
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+]);
+
+export function handleCors(req, res) {
+  const origin = req.headers.origin;
+  if (typeof origin === 'string' && allowedOrigins.has(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+    res.setHeader('Access-Control-Max-Age', '86400');
+    res.setHeader('Vary', 'Origin');
+  }
+
+  if (req.method === 'OPTIONS') {
+    res.status(204).end();
+    return true;
+  }
+  return false;
+}
+
 export function respond(res, statusCode, payload) {
   res.setHeader('Cache-Control', 'no-store');
   res.status(statusCode).json(payload);
